@@ -4,3 +4,4 @@ plugins:
 title: Toby's Ramblings and Ruminations
 description: Applying Quantitative Easing to the field of knowledge
 show_downloads: false
+layout: default
