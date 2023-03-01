@@ -2,7 +2,6 @@
 layout: default
 ---
 
-# Posts
 Here are my posts:
 
 <ul>
