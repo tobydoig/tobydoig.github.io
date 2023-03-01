@@ -1,6 +1,8 @@
 layout: default
 
 # Posts
+Here are my posts:
+
 <ul>
   {% for post in site.posts %}
     <li>
