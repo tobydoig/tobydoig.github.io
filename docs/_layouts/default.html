@@ -3,18 +3,30 @@
   <head>
     <meta charset="utf-8">
     <title>{{ page.title }}</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <meta name="theme-color" content="#353535">
   </head>
   <body>
-    <nav>
-      <a href="/">Home</a>
-    </nav>
-    <h1>{{ page.title }}</h1>
-    <section>
-      {{ content }}
-    </section>
-    <footer>
-      &copy; to me
-    </footer>
+    <div id="header">
+      <nav>
+        <ul>
+          <li class="fork"><a href="https://github.com/tobydoig">GitHub</a></li>
+          <li class="fork"><a href="https://huggingface.co/tobyandzuzka">HuggingFace</a></li>
+          <li class="fork"><a href="https://www.kaggle.com/tobyai">Kaggle</a></li>
+        </ul>
+      </nav>
+    </div><!-- end header -->
+    <div class="wrapper">
+      <section>
+        <div id="title">
+          <h1>{{ page.title }}</h1>
+        </div>
+        {{ content }}
+      </section>
+      <footer>
+        &copy; toby
+      </footer>
+    </div>
   </body>
-</html>
+</html>  
