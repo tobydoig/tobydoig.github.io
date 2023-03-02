@@ -9,6 +9,11 @@ body {
   background-attachment: fixed;
 }
 
+a {
+  font-weight: 400;
+  color: #ffcc00;
+}
+
 .wrapper {
   max-width: 650px;
   margin: 0 auto;
