@@ -12,6 +12,7 @@ body {
 a {
   font-weight: 400;
   color: #ffcc00;
+  font-style: normal;
 }
 
 .wrapper {
@@ -22,11 +23,22 @@ a {
 
 #title {
   text-align: center;
+}
+
+#title h1 {
   font-size: 24px;
+  padding: 0;
+  margin: 20px 0 20px 0;
 }
 
 #title p {
   font-size: 16px;
+}
+
+#title hr {
+  background-color: #8b8065;
+  height: 1px;
+  border 0;
 }
 
 footer {
