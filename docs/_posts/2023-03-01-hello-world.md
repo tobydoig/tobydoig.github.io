@@ -8,7 +8,7 @@ Anyway, this should be formatted as JavaScript.
 
 ```js
 function msg(n) {
-console.log(`hello ${n}!`);
+  console.log(`hello ${n}!`);
 }
 
 msg('world');
