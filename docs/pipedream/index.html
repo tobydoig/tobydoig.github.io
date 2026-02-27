@@ -689,9 +689,33 @@ mainCanvas.addEventListener('mousemove', e => {
 });
 mainCanvas.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('contextmenu', e => e.preventDefault());
-mainCanvas.addEventListener('touchstart', e => { e.preventDefault(); dragStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-window.addEventListener('touchend',       dragEnd);
-mainCanvas.addEventListener('touchmove',  e => { e.preventDefault(); dragMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+mainCanvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    dragEnd();
+    orbitStart(cx, cy);
+  } else {
+    orbitEnd();
+    dragStart(e.touches[0].clientX, e.touches[0].clientY);
+  }
+}, {passive:false});
+
+window.addEventListener('touchend', e => {
+  if (e.touches.length === 0) { dragEnd(); orbitEnd(); }
+});
+
+mainCanvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    orbitMove(cx, cy);
+  } else {
+    dragMove(e.touches[0].clientX, e.touches[0].clientY);
+  }
+}, {passive:false});
 
 let invertY = localStorage.getItem('pipemaze-invertY') === '1';
 
