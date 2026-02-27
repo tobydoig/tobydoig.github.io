@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pipedream">
+<meta name="theme-color" content="#0a0f18">
+<link rel="manifest" href="manifest.json">
+<title>Pipedream</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+
+  #main-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  #overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 5; }
+
+  #ui {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; letter-spacing: 3px;
+    pointer-events: auto; z-index: 6; white-space: nowrap;
+  }
+
+  #win {
+    display: none; position: fixed; inset: 0;
+    font-size: 28px; letter-spacing: 6px;
+    align-items: center; justify-content: center; flex-direction: column; gap: 18px;
+    z-index: 20;
+  }
+  #win.show { display: flex; }
+  #win button {
+    font-size: 12px; letter-spacing: 4px; padding: 10px 28px;
+    background: transparent; cursor: pointer;
+  }
+
+  #confetti-canvas {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    pointer-events: none; z-index: 25;
+    display: none;
+  }
+
+  #preview {
+    display: none; position: fixed; inset: 0;
+    align-items: center; justify-content: flex-end;
+    flex-direction: column; gap: 8px;
+    z-index: 20; pointer-events: none;
+    padding-bottom: 60px;
+  }
+  #preview.show { display: flex; }
+  #preview-msg { font-size: 22px; letter-spacing: 6px; text-align: center; }
+  #preview-sub { font-size: 14px; letter-spacing: 3px; opacity: 0.6; text-align: center; }
+  #preview-btn {
+    font-size: 12px; letter-spacing: 4px; padding: 10px 28px;
+    background: transparent; cursor: pointer; pointer-events: auto;
+    margin-top: 8px; border: 1px solid #ff6600 !important;
+    color: #ff6600 !important;
+    animation: pulse-btn 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse-btn {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,102,0,0.5); }
+    50%       { opacity: 0.7; box-shadow: 0 0 0 8px rgba(255,102,0,0); }
+  }
+
+  #timer {
+    position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; letter-spacing: 3px; z-index: 6;
+    pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  }
+  #timer.show { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="main-canvas"></canvas>
+<canvas id="overlay"></canvas>
+<div id="ui"><a href="https://tobyandzuzka.com" target="_blank" style="text-decoration:none; color:inherit;">tobyandzuzka.com</a></div>
+<canvas id="confetti-canvas"></canvas>
+
+<div id="win">
+  <div id="win-msg">CENTER REACHED</div>
+  <div id="win-sub" style="font-size:14px;letter-spacing:2px;opacity:0.6;margin-top:4px"></div>
+  <button id="win-btn" style="margin-top:16px">NEXT MAZE</button>
+</div>
+
+<div id="preview">
+  <div id="preview-msg">LEVEL 1</div>
+  <div id="preview-sub">ORBIT TO PREVIEW · PRESS START WHEN READY</div>
+  <button id="preview-btn">START</button>
+</div>
+
+<div id="timer">00:00.0</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── RENDERER ──────────────────────────────────────────────────────────────
+const mainCanvas = document.getElementById('main-canvas');
+const renderer   = new THREE.WebGLRenderer({ canvas: mainCanvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x050a0f);
+renderer.shadowMap.enabled = false;
+
+// ─── SCENE ─────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdde4ec);
+scene.fog = new THREE.FogExp2(0xdde4ec, 0.025);
+// ─── CAMERA — isometric angle so world-Y (gravity) is visible ───────────────
+// Camera sits at a 45° elevation so the user can see both the XZ layout and
+// the Y axis. Gravity = world -Y visually pulls toward the bottom of the screen.
+let aspect = window.innerWidth / window.innerHeight;
+let VIEW  = 9;
+const camera = new THREE.OrthographicCamera(
+  -VIEW * aspect, VIEW * aspect, VIEW, -VIEW, 0.1, 200
+);
+// 45° elevation: position equally in Y and Z so we look down at 45°
+const CAM_DIST = 32 * Math.sqrt(2);
+let camDir = new THREE.Vector3(1, 1, 1).normalize();
+let camUp  = new THREE.Vector3(0, 1, 0);
+
+function updateCameraPosition() {
+  const target = maze ? maze.center.pos.clone().applyMatrix4(mazeGroup.matrixWorld) : new THREE.Vector3();
+  // Re-orthogonalise: if camDir and camUp are nearly parallel, reset camUp
+  let right = new THREE.Vector3().crossVectors(camDir, camUp);
+  if (right.lengthSq() < 0.001) {
+    // Pick a fallback up vector perpendicular to camDir
+    camUp.set(Math.abs(camDir.y) < 0.9 ? 0 : 1, Math.abs(camDir.y) < 0.9 ? 1 : 0, 0);
+    right.crossVectors(camDir, camUp);
+  }
+  right.normalize();
+  camUp.crossVectors(right, camDir).normalize();
+  camera.position.copy(target).addScaledVector(camDir, CAM_DIST);
+  camera.up.copy(camUp);
+  camera.lookAt(target);
+}
+camera.position.copy(camDir).multiplyScalar(CAM_DIST);
+camera.lookAt(0, 0, 0);
+scene.add(camera);
+
+// ─── LIGHTING ──────────────────────────────────────────────────────────────
+// Pure ambient so brightness is uniform regardless of maze orientation
+scene.add(new THREE.AmbientLight(0xffffff, 2.2));
+
+// Subtle point light on the ball for a local glow effect only
+const ballLight = new THREE.PointLight(0xff6633, 2.0, 4.0);
+scene.add(ballLight);
+
+// ─── MAZE GROUP ────────────────────────────────────────────────────────────
+const mazeGroup = new THREE.Group();
+scene.add(mazeGroup);
+
+// ─── WORLD AXES HELPER ─────────────────────────────────────────────────────
+const axesScene  = new THREE.Scene();
+const axesCam    = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 10);
+axesCam.position.set(0, 4, 4);
+axesCam.lookAt(0, 0, 0);
+
+// Build axes as LineSegments with distinct colours
+const axesGroup = new THREE.Group();
+axesScene.add(axesGroup);
+
+function makeAxis(dir, color) {
+  const pts = [new THREE.Vector3(0,0,0), dir.clone().multiplyScalar(1.4)];
+  const geo  = new THREE.BufferGeometry().setFromPoints(pts);
+  return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, linewidth: 2 }));
+}
+axesGroup.add(makeAxis(new THREE.Vector3(1,0,0), 0xee2222)); // X red
+axesGroup.add(makeAxis(new THREE.Vector3(0,1,0), 0x22bb22)); // Y green
+axesGroup.add(makeAxis(new THREE.Vector3(0,0,1), 0x2266ee)); // Z blue
+
+// ─── THEME ─────────────────────────────────────────────────────────────────
+const isDark = true;
+
+const THEMES = {
+  dark: { bg: 0x0a0f18, pipe: 0x7ab0e0, junction: 0x5580b0, ball: 0xff4422, center: 0xff6600, start: 0x00ee66, ui: 'rgba(180,210,255,0.6)', win: 'rgba(10,15,24,0.95)', winText: '#7ab0e0' },
+};
+
+function applyTheme() {
+  const t = THEMES.dark;
+  scene.background = new THREE.Color(t.bg);
+  scene.fog         = new THREE.FogExp2(t.bg, 0.025);
+  renderer.setClearColor(t.bg);
+  pipeMat.color.setHex(t.pipe);
+  junctionMat.color.setHex(t.junction);
+  centerMat.color.setHex(t.center);
+  startMat.color.setHex(t.start);
+  if (ballMesh) ballMesh.material.color.setHex(t.ball);
+  for (const child of mazeGroup.children) {
+    if (!child.material || !child.userData.matType) continue;
+    child.material.color.setHex(t[child.userData.matType]);
+  }
+  document.getElementById('ui').style.color = t.ui;
+  const win = document.getElementById('win');
+  win.style.background = t.win;
+  win.style.color      = t.winText;
+  win.querySelector('button').style.border = `1px solid ${t.winText}`;
+  win.querySelector('button').style.color  = t.winText;
+  if (window._refreshModeUI) window._refreshModeUI();
+  if (typeof applyPreviewTheme === 'function') applyPreviewTheme();
+}
+
+// ─── MATERIALS ─────────────────────────────────────────────────────────────
+const PIPE_R = 0.28;
+
+const pipeMat     = new THREE.MeshBasicMaterial({ color: 0x0a1a3a });
+const junctionMat = new THREE.MeshBasicMaterial({ color: 0x060f22 });
+const centerGeo   = new THREE.SphereGeometry(0.38, 16, 12);
+const centerMat   = new THREE.MeshBasicMaterial({ color: 0xdd3300 });
+const startGeo    = new THREE.SphereGeometry(0.26, 12, 10);
+const startMat    = new THREE.MeshBasicMaterial({ color: 0x007722 });
+
+// ─── SEEDED RNG ────────────────────────────────────────────────────────────
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+let currentSeed = 1 * 7919; // deterministic: level * 7919
+let rng = mulberry32(currentSeed);
+let mazeLevel = 1;
+let mazeR = 1;
+let inPreview = true;
+let timerStart = null;
+let timerElapsed = 0;
+let timerRunning = false;
+
+// Structured progression: each entry is [rx, ry, rz, count, fogEnabled, fogRadius]
+// count = number of levels at this size before advancing
+const PROGRESSION = [
+  [1,1,1, 3, false, null],   // levels 1-3:   3x3x3, no fog
+  [2,1,1, 2, false, null],   // levels 4-5:   4x3x3
+  [2,2,1, 2, false, null],   // levels 6-7:   4x4x3
+  [2,2,2, 2, false, null],   // levels 8-9:   4x4x4
+  [3,2,2, 2, false, null],   // levels 10-11: 5x4x4
+  [3,3,2, 2, false, null],   // levels 12-13: 5x5x4
+  [3,3,3, 2, false, null],   // levels 14-15: 5x5x5
+  // Fog round 1 (radius 3.5)
+  [1,1,1, 3, true,  3.5],
+  [2,1,1, 2, true,  3.5],
+  [2,2,1, 2, true,  3.5],
+  [2,2,2, 2, true,  3.5],
+  [3,2,2, 2, true,  3.5],
+  [3,3,2, 2, true,  3.5],
+  [3,3,3, 2, true,  3.5],
+  [3,3,3, 2, true,  3.5],   // 2 rounds of 5x5x5 with fog 3.5
+  // Fog round 2 (radius 3.0)
+  [1,1,1, 3, true,  3.0],
+  [2,1,1, 2, true,  3.0],
+  [2,2,1, 2, true,  3.0],
+  [2,2,2, 2, true,  3.0],
+  [3,2,2, 2, true,  3.0],
+  [3,3,2, 2, true,  3.0],
+  [3,3,3, 2, true,  3.0],
+  [3,3,3, 2, true,  3.0],
+];
+
+function getLevelConfig(level) {
+  let remaining = level;
+  for (const [rx, ry, rz, count, fog, fogR] of PROGRESSION) {
+    if (remaining <= count) return { rx, ry, rz, fog, fogR };
+    remaining -= count;
+  }
+  // Beyond defined progression: keep last config but keep growing
+  const last = PROGRESSION[PROGRESSION.length - 1];
+  return { rx: last[0], ry: last[1], rz: last[2], fog: last[4], fogR: last[5] };
+}
+
+function applyLevelConfig() {
+  const cfg = getLevelConfig(mazeLevel);
+  visEnabled = cfg.fog;
+  if (cfg.fogR !== null) visRadius = cfg.fogR;
+}
+
+function levelToR(level) {
+  const { rx, ry, rz } = getLevelConfig(level);
+  return [rx, ry, rz];
+}
+
+function seededShuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ─── MAZE GRAPH ────────────────────────────────────────────────────────────
+const GRID = 2.0;
+
+function buildMaze() {
+  const nodes = [], edges = [], nodeMap = {};
+  const edgeSet = new Set();
+
+  function nodeAt(x, y, z) {
+    const k = `${x},${y},${z}`;
+    if (!nodeMap[k]) {
+      nodeMap[k] = { id: nodes.length, k, x, y, z,
+        pos: new THREE.Vector3(x*GRID, y*GRID, z*GRID), edges: [] };
+      nodes.push(nodeMap[k]);
+    }
+    return nodeMap[k];
+  }
+
+  function addEdge(a, b) {
+    const k = [a.k, b.k].sort().join('|');
+    if (edgeSet.has(k)) return;
+    edgeSet.add(k);
+    const e = { id: edges.length, a, b };
+    edges.push(e); a.edges.push(e); b.edges.push(e);
+  }
+
+  // Wilson's algorithm on a 3D grid for a uniform spanning tree
+  const [RX, RY, RZ] = levelToR(mazeLevel);
+  const DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+
+  // Pre-create all grid nodes
+  const allCoords = [];
+  for (let x = -RX; x <= RX; x++)
+    for (let y = -RY; y <= RY; y++)
+      for (let z = -RZ; z <= RZ; z++)
+        allCoords.push([x, y, z]);
+
+  // Wilson's loop-erased random walk
+  const inTree = new Set();
+  const start = nodeAt(0, 0, 0);
+  start.isCenter = true;
+  inTree.add(start.k);
+
+  const shuffled = seededShuffle([...allCoords]);
+  for (const [sx, sy, sz] of shuffled) {
+    const startKey = `${sx},${sy},${sz}`;
+    if (inTree.has(startKey)) continue;
+
+    // Loop-erased random walk from this node until we hit the tree
+    const walk = [startKey];
+    const walkNext = { [startKey]: null }; // next step in walk
+
+    let cx = sx, cy = sy, cz = sz;
+    while (!inTree.has(`${cx},${cy},${cz}`)) {
+      const dirs = seededShuffle([...DIRS]);
+      let moved = false;
+      for (const [dx, dy, dz] of dirs) {
+        const nx = cx+dx, ny = cy+dy, nz = cz+dz;
+        if (nx < -RX || nx > RX || ny < -RY || ny > RY || nz < -RZ || nz > RZ) continue;
+        const nk = `${nx},${ny},${nz}`;
+        // Erase loop if we revisit
+        const loopIdx = walk.indexOf(nk);
+        if (loopIdx !== -1) {
+          walk.splice(loopIdx + 1);
+          cx = nx; cy = ny; cz = nz;
+        } else {
+          walkNext[`${cx},${cy},${cz}`] = [nx, ny, nz];
+          walk.push(nk);
+          cx = nx; cy = ny; cz = nz;
+        }
+        moved = true;
+        break;
+      }
+      if (!moved) break;
+    }
+
+    // Add walk to tree
+    for (let i = 0; i < walk.length - 1; i++) {
+      const [ax, ay, az] = walk[i].split(',').map(Number);
+      const next = walkNext[walk[i]];
+      if (!next) continue;
+      const [bx, by, bz] = next;
+      const na = nodeAt(ax, ay, az);
+      const nb = nodeAt(bx, by, bz);
+      addEdge(na, nb);
+      inTree.add(na.k);
+      inTree.add(nb.k);
+    }
+  }
+
+  // Mark leaves (degree-1 nodes, not center)
+  for (const n of nodes) {
+    if (n.edges.length === 1 && !n.isCenter) n.isLeaf = true;
+  }
+
+  // BFS from center to find shortest path length to every node
+  const dist = new Map();
+  const queue = [nodeAt(0,0,0)];
+  dist.set(nodeAt(0,0,0).k, 0);
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const e of cur.edges) {
+      const nb = e.a === cur ? e.b : e.a;
+      if (!dist.has(nb.k)) {
+        dist.set(nb.k, dist.get(cur.k) + 1);
+        queue.push(nb);
+      }
+    }
+  }
+
+  // Pick the leaf farthest from center — guaranteed longest path
+  const leaves = nodes.filter(n => n.isLeaf);
+  const startNode = leaves.reduce((best, n) =>
+    (dist.get(n.k) || 0) > (dist.get(best.k) || 0) ? n : best, leaves[0]);
+  if (startNode) startNode.isStart = true;
+
+  return { nodes, edges, center: nodeAt(0,0,0), startNode, maxDist: dist.get(startNode.k) };
+}
+
+function shuffle(a) { return seededShuffle(a); }
+
+// ─── BUILD GEOMETRY ────────────────────────────────────────────────────────
+let maze, ballMesh;
+
+function buildGeometry() {
+  rng = mulberry32(currentSeed); // reset RNG so seed is reproducible
+  while (mazeGroup.children.length) mazeGroup.remove(mazeGroup.children[0]);
+  maze = buildMaze();
+
+  for (const e of maze.edges) {
+    const curve = new THREE.LineCurve3(e.a.pos, e.b.pos);
+    const geo   = new THREE.TubeGeometry(curve, 1, PIPE_R, 12, false);
+    const m = new THREE.Mesh(geo, pipeMat.clone());
+    m.material.transparent = true;
+    m.userData.midpoint = new THREE.Vector3().addVectors(e.a.pos, e.b.pos).multiplyScalar(0.5);
+    m.userData.matType = 'pipe';
+    mazeGroup.add(m);
+  }
+
+  const jR = PIPE_R * 1.3;
+  for (const n of maze.nodes) {
+    if (n.edges.length >= 2) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(jR, 14, 10), junctionMat.clone());
+      m.material.transparent = true;
+      m.position.copy(n.pos);
+      m.userData.midpoint = n.pos;
+      m.userData.matType = 'junction';
+      mazeGroup.add(m);
+    }
+    if (n.isCenter) {
+      const m = new THREE.Mesh(centerGeo, centerMat.clone());
+      m.material.transparent = true;
+      m.position.copy(n.pos);
+      m.userData.midpoint = n.pos;
+      m.userData.matType = 'center';
+      mazeGroup.add(m);
+    }
+    if (n.isStart) {
+      const m = new THREE.Mesh(startGeo, startMat.clone());
+      m.material.transparent = true;
+      m.position.copy(n.pos);
+      m.userData.midpoint = n.pos;
+      m.userData.matType = 'start';
+      mazeGroup.add(m);
+    }
+  }
+
+  // Ball mesh — depthTest off so it always renders on top of pipes
+  ballMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 20, 16),
+    new THREE.MeshBasicMaterial({ color: 0xff2200, depthTest: false })
+  );
+  ballMesh.material.transparent = true;
+  ballMesh.userData.midpoint = new THREE.Vector3(); // always at ball local pos = origin effectively
+  ballMesh.userData.isBall = true;
+  ballMesh.renderOrder = 999;
+  mazeGroup.add(ballMesh);
+}
+
+// ─── BALL PHYSICS ──────────────────────────────────────────────────────────
+const GRAVITY  = 40.0;
+const FRICTION = 0.960;
+
+const ball = { edgeIdx: 0, t: 0.05, vel: 0, stopped: false };
+
+function screenDownGravity() {
+  return new THREE.Vector3(0, -1, 0);
+}
+
+function edgeWorldDir(e) {
+  const localDir = new THREE.Vector3().subVectors(e.b.pos, e.a.pos).normalize();
+  return localDir.applyQuaternion(mazeGroup.quaternion);
+}
+
+function ballLocalPos() {
+  const e = maze.edges[ball.edgeIdx];
+  return new THREE.Vector3().lerpVectors(e.a.pos, e.b.pos, Math.max(0, Math.min(1, ball.t)));
+}
+
+function updateBall(dt) {
+  if (!maze || ball.stopped) return;
+  const e     = maze.edges[ball.edgeIdx];
+  const grav  = screenDownGravity();
+  const dir   = edgeWorldDir(e);
+  const slope = grav.dot(dir);
+
+  ball.vel += GRAVITY * slope * dt;
+  ball.vel *= Math.pow(FRICTION, dt * 60);
+
+  const len = e.a.pos.distanceTo(e.b.pos);
+  ball.t += (ball.vel * dt) / len;
+
+  if (ball.t >= 1.0) {
+    ball.t = 1.0;
+    if (!isPassThrough(e.b, e.a)) arriveAt(e.b, e.a);
+    else passThrough(e.b, e.a);
+  } else if (ball.t <= 0.0) {
+    ball.t = 0.0;
+    if (!isPassThrough(e.a, e.b)) arriveAt(e.a, e.b);
+    else passThrough(e.a, e.b);
+  }
+
+  ballMesh.position.copy(ballLocalPos());
+  updateRollSound(ball.vel);
+}
+
+// A pass-through node has exactly 2 edges that are colinear — ball just continues
+function isPassThrough(node, cameFrom) {
+  if (node.edges.length !== 2) return false;
+  const other = node.edges.find(e => (e.a === node ? e.b : e.a) !== cameFrom);
+  if (!other) return false;
+  const d1 = new THREE.Vector3().subVectors(cameFrom.pos, node.pos).normalize();
+  const d2 = new THREE.Vector3().subVectors((other.a === node ? other.b : other.a).pos, node.pos).normalize();
+  return Math.abs(d1.dot(d2)) > 0.99; // colinear
+}
+
+function passThrough(node, cameFrom) {
+  const e = node.edges.find(ed => (ed.a === node ? ed.b : ed.a) !== cameFrom);
+  if (!e) return;
+  ball.edgeIdx = e.id;
+  const fromA = e.a === node;
+  if (fromA) { ball.t = 0.01; ball.vel = Math.abs(ball.vel); }
+  else       { ball.t = 0.99; ball.vel = -Math.abs(ball.vel); }
+}
+
+function arriveAt(node, cameFrom) {
+  if (node.isCenter) {
+    stopTimer();
+    const [nrx,nry,nrz] = levelToR(mazeLevel + 1);
+    const totalMs = timerElapsed;
+    const isRecord = saveBestTime(mazeLevel, totalMs);
+    document.getElementById('win-msg').textContent = `LEVEL ${mazeLevel} COMPLETE`;
+    document.getElementById('win-sub').textContent = `TIME: ${fmtTime(totalMs)}${isRecord ? ' · NEW BEST!' : ''} · NEXT: ${(2*nrx+1)*(2*nry+1)*(2*nrz+1)} NODES`;
+    document.getElementById('win').classList.add('show');
+    if (isRecord) { launchConfetti(); playYay(); } else { playWin(); }
+    ball.vel = 0;
+    ball.stopped = true;
+    return;
+  }
+
+  const grav = screenDownGravity();
+  let bestEdge = null, bestFromA = true, bestScore = -Infinity;
+
+  // Consider ALL edges including the one we came from
+  for (const e of node.edges) {
+    const other = e.a === node ? e.b : e.a;
+    const wdir = new THREE.Vector3().subVectors(other.pos, node.pos).normalize().applyQuaternion(mazeGroup.quaternion);
+    const score = grav.dot(wdir);
+    if (score > bestScore) { bestScore = score; bestEdge = e; bestFromA = (e.a === node); }
+  }
+
+  if (!bestEdge || bestScore < -0.35) {
+    ball.vel = 0;
+    ball.stopped = true;
+    return;
+  }
+
+  ball.edgeIdx = bestEdge.id;
+  playClunk(ball.vel);
+  ball.vel = 0;
+  if (bestFromA) { ball.t = 0.01; }
+  else           { ball.t = 0.99; }
+}
+
+function initBall() {
+  const e = maze.startNode.edges[0];
+  ball.edgeIdx = e.id;
+  ball.t   = e.a === maze.startNode ? 0.05 : 0.95;
+  ball.vel = 0;
+  ball.stopped = false;
+}
+
+// ─── ROTATION MODES ────────────────────────────────────────────────────────
+// Three schemes. In all cases we rotate mazeGroup.quaternion, but the pivot
+// (the world-space point that stays fixed on screen) differs.
+//
+// Rotating around a pivot P other than the group origin:
+//   1. Translate maze so P is at origin:  mazeGroup.position -= P
+//   2. Apply rotation quaternion
+//   3. Translate back:                    mazeGroup.position += P  (rotated)
+//
+// "Ball" mode: pivot = ball's current world position.
+// "Click" mode: pivot = world XZ position of the mousedown point.
+// "Center" mode: pivot = mazeGroup origin (original behaviour).
+
+let rotMode = 'ball'; // 'center' | 'ball' | 'click'
+
+// Convert screen pixel to world XZ plane (y=0) via camera unproject + ray-plane intersect
+function screenToWorld(px, py) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const ndcX =  (px / W) * 2 - 1;
+  const ndcY = -(py / H) * 2 + 1;
+  // Unproject near and far points
+  const near = new THREE.Vector3(ndcX, ndcY, -1).unproject(camera);
+  const far  = new THREE.Vector3(ndcX, ndcY,  1).unproject(camera);
+  // Ray-plane intersect with y=0
+  const dir = far.clone().sub(near).normalize();
+  const t   = dir.y !== 0 ? -near.y / dir.y : 0;
+  return near.clone().addScaledVector(dir, t);
+}
+
+function ballWorldPos() {
+  return ballLocalPos().clone().applyMatrix4(mazeGroup.matrixWorld);
+}
+
+const drag = { on: false, lx: 0, ly: 0, pivot: new THREE.Vector3() };
+const orbit = { on: false, lx: 0, ly: 0 };
+
+function dragStart(x, y) {
+  drag.on = true; drag.lx = x; drag.ly = y;
+  const bp = ballWorldPos();
+  drag.pivot.set(bp.x, bp.y, bp.z);
+  ball.stopped = false;
+}
+
+function dragEnd() { drag.on = false; }
+
+function dragMove(x, y) {
+  if (!drag.on) return;
+  ball.stopped = false;
+  const dx = x - drag.lx, dy = y - drag.ly;
+  drag.lx = x; drag.ly = y;
+  const s = 0.006;
+
+  // Turntable: horizontal spins around world Y,
+  // vertical tilts around camera's right axis.
+  const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
+  const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dx * s);
+  const qX = new THREE.Quaternion().setFromAxisAngle(camRight, dy * s * (invertY ? -1 : 1));
+  const q  = new THREE.Quaternion().multiplyQuaternions(qY, qX);
+
+  const pivot = drag.pivot;
+  mazeGroup.position.sub(pivot);
+  mazeGroup.position.applyQuaternion(q);
+  mazeGroup.position.add(pivot);
+  mazeGroup.quaternion.premultiply(q);
+}
+
+function orbitStart(x, y) { orbit.on = true; orbit.lx = x; orbit.ly = y; orbit.axis = null; orbit.accX = 0; orbit.accY = 0; }
+function orbitEnd()        { orbit.on = false; }
+function orbitMove(x, y) {
+  if (!orbit.on) return;
+  const dx = x - orbit.lx, dy = y - orbit.ly;
+  orbit.lx = x; orbit.ly = y;
+
+  if (!orbit.axis) {
+    orbit.accX += Math.abs(dx);
+    orbit.accY += Math.abs(dy);
+    if (orbit.accX + orbit.accY > 6)
+      orbit.axis = orbit.accX > orbit.accY ? 'h' : 'v';
+    else return;
+  }
+
+  if (orbit.axis === 'h') {
+    // Horizontal: rotate around world Y
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), -dx * 0.005);
+    camDir.applyQuaternion(q).normalize();
+    camUp.applyQuaternion(q).normalize();
+  } else {
+    // Vertical: rotate around camera's right axis (camDir × camUp)
+    const right = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
+    const q = new THREE.Quaternion().setFromAxisAngle(right, -dy * 0.005 * (invertY ? -1 : 1));
+    camDir.applyQuaternion(q).normalize();
+    camUp.applyQuaternion(q).normalize();
+  }
+  updateCameraPosition();
+}
+
+mainCanvas.addEventListener('mousedown',  e => {
+  if (e.button === 2) orbitStart(e.clientX, e.clientY);
+  else dragStart(e.clientX, e.clientY);
+});
+window.addEventListener('mouseup', e => {
+  if (e.button === 2) orbitEnd();
+  else dragEnd();
+});
+mainCanvas.addEventListener('mousemove', e => {
+  orbitMove(e.clientX, e.clientY);
+  dragMove(e.clientX, e.clientY);
+});
+mainCanvas.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('contextmenu', e => e.preventDefault());
+mainCanvas.addEventListener('touchstart', e => { e.preventDefault(); dragStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+window.addEventListener('touchend',       dragEnd);
+mainCanvas.addEventListener('touchmove',  e => { e.preventDefault(); dragMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+
+let invertY = localStorage.getItem('pipemaze-invertY') === '1';
+
+// ─── MODE SELECTOR UI ──────────────────────────────────────────────────────
+(function buildModeUI() {
+  const wrap = document.createElement('div');
+  wrap.id = 'mode-wrap';
+  wrap.style.cssText = `
+    position:fixed; top:16px; left:50%; transform:translateX(-50%);
+    display:flex; gap:0; z-index:10; pointer-events:auto;
+    border-radius:4px; overflow:hidden;
+  `;
+
+  const modes = [
+    { id:'invertY', label:'INVERT Y', action: () => { invertY = !invertY; localStorage.setItem('pipemaze-invertY', invertY ? '1' : '0'); }, toggle: () => invertY },
+  ];
+
+  function refreshStyles() {
+    const bg  = isDark ? 'rgba(10,15,24,0.9)'    : 'rgba(221,228,236,0.9)';
+    const c   = isDark ? 'rgba(180,210,255,0.4)'  : 'rgba(10,26,58,0.4)';
+    const cOn = isDark ? 'rgba(180,210,255,1)'    : 'rgba(10,26,58,1)';
+    const bc  = isDark ? 'rgba(180,210,255,0.2)'  : 'rgba(10,26,58,0.2)';
+    wrap.style.border = `1px solid ${bc}`;
+    wrap.querySelectorAll('button').forEach(b => {
+      const active = modes.find(m => m.id === b.dataset.id)?.toggle();
+      b.style.background  = active ? (isDark ? 'rgba(180,210,255,0.15)' : 'rgba(10,26,58,0.12)') : bg;
+      b.style.color       = active ? cOn : c;
+      b.style.borderRight = `1px solid ${bc}`;
+    });
+    wrap.lastChild.style.borderRight = 'none';
+  }
+  window._refreshModeUI = refreshStyles;
+
+  modes.forEach(m => {
+    const btn = document.createElement('button');
+    btn.textContent = m.label;
+    btn.dataset.id  = m.id;
+    btn.style.cssText = `
+      font:10px 'Courier New',monospace; letter-spacing:2px;
+      padding:6px 14px; border:none; cursor:pointer;
+      transition:background 0.15s,color 0.15s;
+    `;
+    btn.addEventListener('click', () => {
+      if (m.action) { m.action(); }
+      else { rotMode = m.id; }
+      refreshStyles();
+    });
+    wrap.appendChild(btn);
+  });
+
+  document.body.appendChild(wrap);
+  refreshStyles();
+})();
+
+// ─── SEED UI ───────────────────────────────────────────────────────────────
+
+
+
+// ─── DEBUG LEVEL CONTROLS ──────────────────────────────────────────────────
+(function buildDebugUI() {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `
+    position:fixed; bottom:100px; right:16px; z-index:10;
+    display:flex; gap:0; align-items:stretch;
+    border-radius:4px; overflow:hidden;
+    display:none;
+  `;
+
+  function makeBtn(label) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = `
+      font:10px 'Courier New',monospace; letter-spacing:2px;
+      padding:6px 12px; border:none; cursor:pointer;
+      transition:background 0.15s,color 0.15s;
+    `;
+    return b;
+  }
+
+  const prevBtn = makeBtn('◀ LEVEL');
+  const levelLbl = document.createElement('div');
+  levelLbl.style.cssText = `
+    font:10px 'Courier New',monospace; letter-spacing:2px;
+    padding:6px 10px; min-width:60px; text-align:center;
+  `;
+  const nextBtn = makeBtn('LEVEL ▶');
+
+  function updateLabel() {
+    const [rx,ry,rz] = levelToR(mazeLevel);
+    levelLbl.textContent = `L${mazeLevel} (${(2*rx+1)*(2*ry+1)*(2*rz+1)}n)`;
+  }
+  updateLabel();
+
+  function applyColors() {
+    const bg = isDark ? 'rgba(10,15,24,0.9)'    : 'rgba(221,228,236,0.9)';
+    const c  = isDark ? 'rgba(180,210,255,0.4)' : 'rgba(10,26,58,0.4)';
+    const bc = isDark ? 'rgba(180,210,255,0.2)' : 'rgba(10,26,58,0.2)';
+    wrap.style.border = `1px solid ${bc}`;
+    [prevBtn, nextBtn].forEach(b => {
+      b.style.background = bg; b.style.color = c;
+    });
+    levelLbl.style.background = bg; levelLbl.style.color = c;
+    levelLbl.style.borderLeft = levelLbl.style.borderRight = `1px solid ${bc}`;
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (mazeLevel <= 1) return;
+    mazeLevel--;
+    winPlayed = false;
+    currentSeed = mazeLevel * 7919;
+    document.getElementById('win').classList.remove('show');
+    mazeGroup.quaternion.set(0,0,0,1);
+    mazeGroup.position.set(0,0,0);
+    applyLevelConfig();
+    buildGeometry(); initBall(); updateLabel(); showPreview();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    mazeLevel++;
+    winPlayed = false;
+    currentSeed = mazeLevel * 7919;
+    document.getElementById('win').classList.remove('show');
+    mazeGroup.quaternion.set(0,0,0,1);
+    mazeGroup.position.set(0,0,0);
+    applyLevelConfig();
+    buildGeometry(); initBall(); updateLabel(); showPreview();
+  });
+
+  const origRefresh = window._refreshModeUI;
+  window._refreshModeUI = () => { origRefresh && origRefresh(); applyColors(); };
+
+  wrap.appendChild(prevBtn);
+  wrap.appendChild(levelLbl);
+  wrap.appendChild(nextBtn);
+  document.body.appendChild(wrap);
+  applyColors();
+})();
+
+// ─── BEST TIMES ────────────────────────────────────────────────────────────
+const bestTimes = JSON.parse(localStorage.getItem('pipemaze-besttimes') || '{}');
+
+function saveBestTime(level, ms) {
+  if (!bestTimes[level] || ms < bestTimes[level]) {
+    bestTimes[level] = ms;
+    localStorage.setItem('pipemaze-besttimes', JSON.stringify(bestTimes));
+    return true; // new record
+  }
+  return false;
+}
+
+// ─── VISIBILITY UI ─────────────────────────────────────────────────────────
+let visEnabled = false;
+let visRadius  = 3.0;
+
+
+
+
+// ─── 2D OVERLAY: GRAVITY ARROW ─────────────────────────────────────────────
+
+const overlayCanvas = document.getElementById('overlay');
+const octx = overlayCanvas.getContext('2d');
+
+function resizeOverlay() {
+  overlayCanvas.width  = window.innerWidth;
+  overlayCanvas.height = window.innerHeight;
+}
+resizeOverlay();
+
+function drawOverlay() {
+  const W = overlayCanvas.width, H = overlayCanvas.height;
+  octx.clearRect(0, 0, W, H);
+  if (!maze) return;
+
+  const AX = 100, ix = W - AX - 10, iy = 10;
+
+  // Background for inset
+  octx.fillStyle = isDark ? 'rgba(10,15,24,0.65)' : 'rgba(221,228,236,0.65)';
+  octx.fillRect(ix, iy, AX, AX);
+
+  // Project each axis tip through axesCam to canvas coords
+  function axisLabel(wx, wy, wz) {
+    const v = new THREE.Vector3(wx, wy, wz)
+      .applyQuaternion(mazeGroup.quaternion)
+      .project(axesCam);
+    return { x: ix + (v.x * 0.5 + 0.5) * AX, y: iy + (-v.y * 0.5 + 0.5) * AX };
+  }
+
+  const labels = [
+    { pos: axisLabel(1.2, 0, 0), text: 'X', color: '#ee2222' },
+    { pos: axisLabel(0, 1.2, 0), text: 'Y', color: '#22bb22' },
+    { pos: axisLabel(0, 0, 1.2), text: 'Z', color: '#2266ee' },
+  ];
+
+  // Gravity arrow: fixed world -Y, projected without maze rotation
+  function worldLabel(wx, wy, wz) {
+    const v = new THREE.Vector3(wx, wy, wz).project(axesCam);
+    return { x: ix + (v.x * 0.5 + 0.5) * AX, y: iy + (-v.y * 0.5 + 0.5) * AX };
+  }
+  const gOrigin = worldLabel(0, 0, 0);
+  const gTip    = worldLabel(0, -1.1, 0);
+  const gColor  = isDark ? 'rgba(255,160,60,0.9)' : 'rgba(200,90,0,0.9)';
+  octx.strokeStyle = gColor;
+  octx.lineWidth = 2;
+  octx.beginPath();
+  octx.moveTo(gOrigin.x, gOrigin.y);
+  octx.lineTo(gTip.x, gTip.y);
+  octx.stroke();
+  // Arrowhead
+  const angle = Math.atan2(gTip.y - gOrigin.y, gTip.x - gOrigin.x);
+  octx.fillStyle = gColor;
+  octx.beginPath();
+  octx.moveTo(gTip.x, gTip.y);
+  octx.lineTo(gTip.x - 7 * Math.cos(angle - 0.4), gTip.y - 7 * Math.sin(angle - 0.4));
+  octx.lineTo(gTip.x - 7 * Math.cos(angle + 0.4), gTip.y - 7 * Math.sin(angle + 0.4));
+  octx.closePath();
+  octx.fill();
+  // Label
+  octx.font = 'bold 11px Courier New';
+  octx.fillStyle = gColor;
+  octx.fillText('G', gTip.x + 9, gTip.y + 2);
+
+  octx.font = 'bold 12px Courier New';
+  octx.textAlign = 'center';
+  octx.textBaseline = 'middle';
+  for (const { pos, text, color } of labels) {
+    // Shadow for readability
+    octx.fillStyle = isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)';
+    octx.fillText(text, pos.x + 1, pos.y + 1);
+    octx.fillStyle = color;
+    octx.fillText(text, pos.x, pos.y);
+  }
+
+  // Border
+  octx.strokeStyle = isDark ? 'rgba(180,210,255,0.25)' : 'rgba(10,26,58,0.25)';
+  octx.lineWidth = 1;
+  octx.strokeRect(ix, iy, AX, AX);
+}
+
+// ─── RESIZE ────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  aspect = window.innerWidth / window.innerHeight;
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.left   = -VIEW * aspect;
+  camera.right  =  VIEW * aspect;
+  camera.top    =  VIEW;
+  camera.bottom = -VIEW;
+  camera.updateProjectionMatrix();
+  resizeOverlay();
+});
+
+// ─── ZOOM ──────────────────────────────────────────────────────────────────
+window.addEventListener('wheel', e => {
+  e.preventDefault();
+  VIEW = Math.max(3, Math.min(24, VIEW * (1 + e.deltaY * 0.001)));
+  camera.left   = -VIEW * aspect;
+  camera.right  =  VIEW * aspect;
+  camera.top    =  VIEW;
+  camera.bottom = -VIEW;
+  camera.updateProjectionMatrix();
+}, { passive: false });
+
+// ─── LOOP ──────────────────────────────────────────────────────────────────
+let lastT = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt  = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+
+  // Update timer display
+  if (timerRunning && timerStart !== null) {
+    const ms = timerElapsed + (now - timerStart);
+    document.getElementById('timer').textContent = fmtTime(ms);
+  }
+
+  mazeGroup.updateMatrixWorld();
+  if (!inPreview) {
+    updateBall(dt);
+    ballLight.position.copy(ballWorldPos());
+  }
+  if (ballMesh) ballMesh.visible = !inPreview;
+
+  // Keep ball centered: offset mazeGroup so ball world pos = origin
+  const bw = ballWorldPos();
+  mazeGroup.position.x -= bw.x;
+  mazeGroup.position.y -= bw.y;
+  mazeGroup.position.z -= bw.z;
+
+  // Camera orbits exit node — update each frame as maze moves
+  mazeGroup.updateMatrixWorld();
+  updateCameraPosition();
+
+  // Fog of war: fade opacity based on distance to ball or exit (skip during preview)
+  const ballLocal = ballLocalPos();
+  const exitLocal = maze.center.pos;
+  for (const child of mazeGroup.children) {
+    const mp = child.userData.midpoint;
+    if (!mp || !child.material) continue;
+    if (child.userData.isBall) { child.material.opacity = 1; child.visible = !inPreview; continue; }
+    if (!visEnabled || inPreview) { child.material.opacity = 1; child.visible = true; continue; }
+    const dBall = mp.distanceTo(ballLocal);
+    const dExit = mp.distanceTo(exitLocal);
+    const nearest = Math.min(dBall, dExit);
+    const fadeStart = visRadius * 0.5;
+    const opacity = nearest < fadeStart ? 1
+      : nearest > visRadius ? 0
+      : 1 - (nearest - fadeStart) / (visRadius - fadeStart);
+    child.material.opacity = opacity;
+    child.visible = opacity > 0.01;
+  }
+
+  // Main scene
+  renderer.autoClear = true;
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+  renderer.render(scene, camera);
+
+  // Axes inset — top-right 100×100px
+  axesGroup.quaternion.copy(mazeGroup.quaternion);
+  const AX = 100, AXX = window.innerWidth - AX - 10, AXY = window.innerHeight - AX - 10;
+  renderer.autoClear = false;
+  renderer.clearDepth();
+  renderer.setScissorTest(true);
+  renderer.setScissor(AXX, AXY, AX, AX);
+  renderer.setViewport(AXX, AXY, AX, AX);
+  renderer.render(axesScene, axesCam);
+  renderer.setScissorTest(false);
+  renderer.autoClear = true;
+
+  drawOverlay();
+}
+
+// ─── START ─────────────────────────────────────────────────────────────────
+function nextLevel() {
+  winPlayed = false;
+  mazeLevel++;
+  currentSeed = mazeLevel * 7919;
+  document.getElementById('win').classList.remove('show');
+  mazeGroup.quaternion.set(0,0,0,1);
+  mazeGroup.position.set(0,0,0);
+  applyLevelConfig();
+  buildGeometry();
+  initBall();
+  showPreview();
+}
+
+document.getElementById('win-btn').addEventListener('click', nextLevel);
+
+// ─── PREVIEW & TIMER ───────────────────────────────────────────────────────
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  const t = Math.floor((ms % 1000) / 100);
+  return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}.${t}`;
+}
+
+function showPreview() {
+  inPreview = true;
+  timerRunning = false;
+  timerElapsed = 0;
+  const cfg = getLevelConfig(mazeLevel);
+  const [rx,ry,rz] = levelToR(mazeLevel);
+  document.getElementById('preview-msg').textContent = `LEVEL ${mazeLevel}`;
+  const best = bestTimes[mazeLevel];
+  const sizeStr = `${(2*rx+1)}×${(2*ry+1)}×${(2*rz+1)} MAZE${cfg.fog ? ` · FOG R=${cfg.fogR}` : ''}`;
+  document.getElementById('preview-sub').textContent =
+    sizeStr + (best ? ` · BEST: ${fmtTime(best)}` : '');
+  document.getElementById('preview').classList.add('show');
+  document.getElementById('timer').classList.remove('show');
+  document.getElementById('timer').textContent = '00:00.0';
+  // Show full maze during preview (ignore fog)
+  for (const child of mazeGroup.children) {
+    if (child.material) { child.material.opacity = 1; child.visible = true; }
+  }
+}
+
+function startLevel() {
+  inPreview = false;
+  document.getElementById('preview').classList.remove('show');
+  document.getElementById('timer').classList.add('show');
+  // Reset maze orientation and camera so gravity feels natural
+  mazeGroup.quaternion.set(0, 0, 0, 1);
+  camDir.set(1, 1, 1).normalize();
+  camUp.set(0, 1, 0);
+  timerStart = performance.now();
+  timerRunning = true;
+}
+
+function stopTimer() {
+  timerRunning = false;
+  if (timerStart !== null) timerElapsed += performance.now() - timerStart;
+  timerStart = null;
+}
+
+document.getElementById('preview-btn').addEventListener('click', startLevel);
+
+// Style preview overlay to match theme
+function applyPreviewTheme() {
+  const t = isDark ? THEMES.dark : THEMES.light;
+  const el = document.getElementById('preview');
+  el.style.background = 'transparent';
+  el.style.color = t.winText;
+  document.getElementById('timer').style.color = t.ui;
+}
+
+// ─── AUDIO ─────────────────────────────────────────────────────────────────
+let audioCtx = null;
+let rollGain = null, rollFilter = null, rollNoise = null;
+let winPlayed = false;
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Ball rumble: white noise → two resonant bandpass filters → gain
+    // Sounds like a ball rolling on a hard surface
+    const bufSize = audioCtx.sampleRate * 3;
+    const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    // Pink-ish noise (sum of octaves) for a warmer rumble
+    let b0=0,b1=0,b2=0;
+    for (let i = 0; i < bufSize; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886*b0 + w*0.0555179;
+      b1 = 0.99332*b1 + w*0.0750759;
+      b2 = 0.96900*b2 + w*0.1538520;
+      d[i] = (b0 + b1 + b2) * 0.2;
+    }
+    rollNoise = audioCtx.createBufferSource();
+    rollNoise.buffer = buf;
+    rollNoise.loop = true;
+
+    // Low resonant peak — the main thud of rolling
+    rollFilter = audioCtx.createBiquadFilter();
+    rollFilter.type = 'bandpass';
+    rollFilter.frequency.value = 80;
+    rollFilter.Q.value = 3;
+
+    // Second peak for texture
+    const filter2 = audioCtx.createBiquadFilter();
+    filter2.type = 'bandpass';
+    filter2.frequency.value = 220;
+    filter2.Q.value = 2;
+
+    rollGain = audioCtx.createGain();
+    rollGain.gain.value = 0;
+
+    rollNoise.connect(rollFilter);
+    rollNoise.connect(filter2);
+    rollFilter.connect(rollGain);
+    filter2.connect(rollGain);
+    rollGain.connect(audioCtx.destination);
+    rollNoise.start();
+  }
+  return audioCtx;
+}
+
+function updateRollSound(speed) {
+  if (!audioCtx) return;
+  const spd = Math.abs(speed);
+  const vol = Math.min(spd * 0.15, 0.3);
+  const freq = 60 + spd * 60;
+  rollGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+  rollFilter.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
+}
+
+function playClunk(speed) {
+  const ctx = getAudioCtx();
+  const t = ctx.currentTime;
+  const vol = Math.min(Math.abs(speed) * 0.15, 0.4);
+  const osc = ctx.createOscillator();
+  const g   = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(110, t);
+  osc.frequency.exponentialRampToValueAtTime(35, t + 0.1);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(t); osc.stop(t + 0.12);
+  // Noise thud
+  const nbuf = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+  const nd = nbuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / nd.length);
+  const ns = ctx.createBufferSource();
+  const ng = ctx.createGain();
+  ns.buffer = nbuf;
+  ng.gain.value = vol * 0.3;
+  ns.connect(ng); ng.connect(ctx.destination);
+  ns.start(t);
+}
+
+function playWin() {
+  if (winPlayed) return;
+  winPlayed = true;
+  const ctx = getAudioCtx();
+  // Fade out roll sound
+  rollGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+  const notes = [261.6, 329.6, 392, 523.2];
+  notes.forEach((freq, i) => {
+    const t   = ctx.currentTime + i * 0.15;
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.3, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.5);
+  });
+}
+
+// Initialise audio context on first user interaction
+window.addEventListener('pointerdown', () => getAudioCtx(), { once: true });
+
+// ─── CONFETTI ──────────────────────────────────────────────────────────────
+const confettiCanvas = document.getElementById('confetti-canvas');
+const confettiCtx = confettiCanvas.getContext('2d');
+let confettiParticles = [];
+let confettiAnim = null;
+
+function launchConfetti() {
+  confettiCanvas.width  = window.innerWidth;
+  confettiCanvas.height = window.innerHeight;
+  confettiCanvas.style.display = 'block';
+  const colors = ['#ff6600','#ffcc00','#00ccff','#ff3399','#33ff99','#ffffff'];
+  confettiParticles = Array.from({ length: 160 }, () => ({
+    x: Math.random() * confettiCanvas.width,
+    y: -10 - Math.random() * 80,
+    r: 4 + Math.random() * 6,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    vx: (Math.random() - 0.5) * 4,
+    vy: 2 + Math.random() * 4,
+    angle: Math.random() * Math.PI * 2,
+    spin: (Math.random() - 0.5) * 0.2,
+    shape: Math.random() < 0.5 ? 'rect' : 'circle',
+  }));
+  if (confettiAnim) cancelAnimationFrame(confettiAnim);
+  let ttl = 180;
+  function step() {
+    confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+    confettiParticles.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.angle += p.spin;
+      confettiCtx.save();
+      confettiCtx.translate(p.x, p.y);
+      confettiCtx.rotate(p.angle);
+      confettiCtx.fillStyle = p.color;
+      if (p.shape === 'rect') confettiCtx.fillRect(-p.r, -p.r * 0.5, p.r * 2, p.r);
+      else { confettiCtx.beginPath(); confettiCtx.arc(0, 0, p.r * 0.6, 0, Math.PI * 2); confettiCtx.fill(); }
+      confettiCtx.restore();
+    });
+    ttl--;
+    if (ttl > 0) confettiAnim = requestAnimationFrame(step);
+    else { confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height); confettiCanvas.style.display = 'none'; }
+  }
+  confettiAnim = requestAnimationFrame(step);
+}
+
+function playYay() {
+  const ctx = getAudioCtx();
+  const t = ctx.currentTime;
+  // Bright upward glide + harmonics = "yay!" feel
+  const freqs = [400, 600, 800];
+  freqs.forEach((f, i) => {
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f * 0.7, t + i * 0.04);
+    osc.frequency.exponentialRampToValueAtTime(f * 1.4, t + i * 0.04 + 0.18);
+    g.gain.setValueAtTime(0, t + i * 0.04);
+    g.gain.linearRampToValueAtTime(0.25, t + i * 0.04 + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.04 + 0.5);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(t + i * 0.04); osc.stop(t + i * 0.04 + 0.5);
+  });
+}
+
+buildGeometry();
+initBall();
+applyLevelConfig();
+applyTheme();
+showPreview();
+animate();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+</script>
+</body>
+</html>
