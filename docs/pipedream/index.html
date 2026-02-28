@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pipedream">
@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <title>Pipedream</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-touch-callout: none; }
   body {
     overflow: hidden;
     font-family: Arial, Helvetica, sans-serif;
@@ -19,6 +19,7 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
   }
   canvas { display: block; }
 
@@ -615,7 +616,7 @@ const ball = { edgeIdx: 0, t: 0.05, vel: 0, stopped: false };
 // ─── TILT CONTROLS ─────────────────────────────────────────────────────────
 let tiltEnabled = false;
 let tiltBaseBeta = null, tiltBaseGamma = null;
-const TILT_SENSITIVITY = 0.8;
+const TILT_SENSITIVITY = 1.0;
 
 function screenDownGravity() {
   return new THREE.Vector3(0, -1, 0);
@@ -843,7 +844,7 @@ function rotateMaze(dx, dy) {
   if (!maze || levelComplete || winAnimating) return;
   const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
   const qH = dx !== 0 ? new THREE.Quaternion().setFromAxisAngle(camUp,    dx * s) : null;
-  const qV = dy !== 0 ? new THREE.Quaternion().setFromAxisAngle(camRight, dy * s * (invertY ? -1 : 1)) : null;
+  const qV = dy !== 0 ? new THREE.Quaternion().setFromAxisAngle(camRight, -dy * s * (invertY ? -1 : 1)) : null;
   const q  = qH && qV ? qH.multiply(qV) : (qH || qV);
   if (!q) return;
   mazeGroup.quaternion.premultiply(q);
@@ -922,6 +923,18 @@ window.addEventListener('gestureend',  e => e.preventDefault(), { passive: false
 document.addEventListener('touchstart', e => {
   if (e.touches.length > 1) e.preventDefault(); // block browser multi-touch gestures
 }, { passive: false });
+// Prevent long-press from triggering share/callout menus
+document.addEventListener('touchend', e => e.preventDefault(), { passive: false });
+// Reset viewport scale if browser zoom has snuck in (e.g. after share sheet dismissal)
+function resetViewportScale() {
+  const vp = document.querySelector('meta[name=viewport]');
+  if (vp) {
+    vp.content = 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+  }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resetViewportScale(); });
+window.addEventListener('pageshow', resetViewportScale);
+window.addEventListener('focus', resetViewportScale);
 
 // ─── KEY CONTROLS ──────────────────────────────────────────────────────────
 const keysDown = new Set();
@@ -1573,7 +1586,7 @@ window.addEventListener('resize', () => {
     side: 'right', label: 'ROTATE', hint: '↑ ↓', cursor: 'ns-resize',
     onDrag: dy => {
       const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-      rotateMazeAroundAxis(camRight, dy * 0.012);
+      rotateMazeAroundAxis(camRight, -dy * 0.012);
     },
   });
 })();
