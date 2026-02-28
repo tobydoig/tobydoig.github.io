@@ -736,14 +736,17 @@ function arriveAt(node, cameFrom) {
     launchPipeAnimation(() => {
       const winSub = document.getElementById('win-sub');
       document.getElementById('win-msg').textContent = `LEVEL ${mazeLevel} COMPLETE`;
-      winSub.textContent = `TIME: ${fmtTime(totalMs)}`;
       winSub.style.fontSize = '';
+      winSub.style.color = '';
+      winSub.textContent = `TIME: ${fmtTime(totalMs)}`;
       document.getElementById('win').classList.add('show');
 
       if (isRecord) {
-        playRecordStab();
-        launchConfetti();
-        animateNewBest(winSub, `TIME: ${fmtTime(totalMs)} · NEW BEST!`);
+        setTimeout(() => {
+          playRecordStab();
+          launchConfetti();
+          animateNewBest(winSub, `🏆 TIME: ${fmtTime(totalMs)} 🏆`);
+        }, 1000);
       }
     });
     return;
@@ -1222,6 +1225,20 @@ function clearPathHighlight() {
   wrap.appendChild(seedRow);
   wrap.appendChild(pathRow);
   wrap.appendChild(junctionRow);
+
+  // ── Clear scores button ──
+  const clearRow = makeRow();
+  const clearBtn = makeBtn('CLEAR SCORES');
+  clearBtn.style.flex = '1';
+  clearBtn.addEventListener('click', () => {
+    Object.keys(bestTimes).forEach(k => delete bestTimes[k]);
+    localStorage.removeItem('pipemaze-besttimes');
+    clearBtn.textContent = 'CLEARED!';
+    setTimeout(() => { clearBtn.textContent = 'CLEAR SCORES'; }, 1200);
+    updateLabel();
+  });
+  clearRow.appendChild(clearBtn);
+  wrap.appendChild(clearRow);
   document.body.appendChild(wrap);
 })();
 
@@ -1822,20 +1839,8 @@ function playRecordStab() {
 }
 
 function animateNewBest(el, finalText) {
-  const START_SIZE = 42;
-  const END_SIZE   = 14;
-  const DURATION   = 600;
-  const start = performance.now();
   el.textContent = finalText;
-  el.style.opacity = '1';
   el.style.color = '#ffcc00';
-  function step(now) {
-    const t    = Math.min(1, (now - start) / DURATION);
-    const ease = 1 - Math.pow(1 - t, 3);
-    el.style.fontSize = `${START_SIZE + (END_SIZE - START_SIZE) * ease}px`;
-    if (t < 1) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
 }
 
 buildGeometry();
