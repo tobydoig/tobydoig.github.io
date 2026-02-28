@@ -598,9 +598,59 @@ const FRICTION = 0.960;
 
 const ball = { edgeIdx: 0, t: 0.05, vel: 0, stopped: false };
 
+// ─── TILT CONTROLS ─────────────────────────────────────────────────────────
+let tiltEnabled = false;
+let tiltBase = null; // baseline orientation when tilt activated
+
 function screenDownGravity() {
   return new THREE.Vector3(0, -1, 0);
 }
+
+function initTilt() {
+  if (!window.DeviceOrientationEvent) return;
+
+  let lastBeta = null, lastGamma = null;
+
+  function onOrientation(e) {
+    if (!tiltEnabled || inPreview || winAnimating) return;
+    const beta  = e.beta  ?? 0;
+    const gamma = e.gamma ?? 0;
+
+    if (lastBeta === null) { lastBeta = beta; lastGamma = gamma; return; }
+
+    const dBeta  = (beta  - lastBeta)  * Math.PI / 180;
+    const dGamma = (gamma - lastGamma) * Math.PI / 180;
+    lastBeta  = beta;
+    lastGamma = gamma;
+
+    // dGamma = side tilt → rotate around camUp (horizontal spin)
+    // dBeta  = forward/back tilt → rotate around camRight (vertical tilt)
+    const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
+    const qH = new THREE.Quaternion().setFromAxisAngle(camUp,   dGamma * 2);
+    const qV = new THREE.Quaternion().setFromAxisAngle(camRight, dBeta * 2);
+    mazeGroup.quaternion.premultiply(new THREE.Quaternion().multiplyQuaternions(qH, qV));
+    ball.stopped = false;
+  }
+
+  function start() {
+    window.addEventListener('deviceorientation', onOrientation, { passive: true });
+    tiltEnabled = true;
+  }
+
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    window.addEventListener('touchstart', async () => {
+      try {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res === 'granted') start();
+      } catch(e) {}
+    }, { once: true });
+  } else {
+    // Android — start on first touch so we know it's a touch device
+    window.addEventListener('touchstart', () => start(), { once: true });
+  }
+}
+
+initTilt();
 
 function edgeWorldDir(e) {
   const localDir = new THREE.Vector3().subVectors(e.b.pos, e.a.pos).normalize();
