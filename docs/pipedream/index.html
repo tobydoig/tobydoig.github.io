@@ -118,7 +118,9 @@ const camera = new THREE.OrthographicCamera(
   -VIEW * aspect, VIEW * aspect, VIEW, -VIEW, 0.1, 200
 );
 // 45° elevation: position equally in Y and Z so we look down at 45°
-const CAM_DIST = 32 * Math.sqrt(2);
+let CAM_DIST = 32 * Math.sqrt(2);
+const CAM_DIST_MIN = 20;
+const CAM_DIST_MAX = 120;
 let camDir = new THREE.Vector3(1, 1, 1).normalize();
 let camUp  = new THREE.Vector3(0, 1, 0);
 
@@ -601,45 +603,39 @@ const ball = { edgeIdx: 0, t: 0.05, vel: 0, stopped: false };
 
 // ─── TILT CONTROLS ─────────────────────────────────────────────────────────
 let tiltEnabled = false;
-let tiltBaseBeta = null, tiltBaseGamma = null;
-let tiltBaseQuat = null;
-const TILT_SENSITIVITY = 2.5;
+let tiltBaseAlpha = null;
+const TILT_SENSITIVITY = 3.0;
 
 function screenDownGravity() {
   return new THREE.Vector3(0, -1, 0);
 }
 
 function onOrientationEvent(e) {
-  if (!tiltEnabled || winAnimating) return;
-  if (e.beta === null || e.gamma === null) return;
+  if (!tiltEnabled || winAnimating || inPreview) return;
+  if (e.alpha === null) return;
 
   // Debug indicator
   const dbg = document.getElementById('tilt-dbg');
-  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `β${e.beta?.toFixed(1)} γ${e.gamma?.toFixed(1)}`; }
+  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `α${e.alpha?.toFixed(1)}`; }
 
-  // Capture baseline on first event after enable
-  if (tiltBaseBeta === null) {
-    tiltBaseBeta  = e.beta;
-    tiltBaseGamma = e.gamma;
-    tiltBaseQuat  = mazeGroup.quaternion.clone();
-    return;
-  }
+  // Capture baseline on first event
+  if (tiltBaseAlpha === null) { tiltBaseAlpha = e.alpha; return; }
 
-  const dBeta  = (e.beta  - tiltBaseBeta)  * Math.PI / 180;
-  const dGamma = (e.gamma - tiltBaseGamma) * Math.PI / 180;
+  // Spin around camDir — same as Q/E keys but driven by device rotation (alpha)
+  let dAlpha = e.alpha - tiltBaseAlpha;
+  // Wrap to -180..180
+  if (dAlpha > 180)  dAlpha -= 360;
+  if (dAlpha < -180) dAlpha += 360;
 
-  const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-  const qH = new THREE.Quaternion().setFromAxisAngle(camUp,    dGamma * TILT_SENSITIVITY);
-  const qV = new THREE.Quaternion().setFromAxisAngle(camRight,  dBeta * TILT_SENSITIVITY);
-  const q  = new THREE.Quaternion().multiplyQuaternions(qH, qV);
-  mazeGroup.quaternion.copy(tiltBaseQuat).premultiply(q);
+  const angle = dAlpha * Math.PI / 180 * TILT_SENSITIVITY;
+  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), -angle);
+  mazeGroup.quaternion.premultiply(q);
+  tiltBaseAlpha = e.alpha; // track incrementally to avoid drift
   ball.stopped = false;
 }
 
 function resetTiltBaseline() {
-  tiltBaseBeta = null;
-  tiltBaseGamma = null;
-  tiltBaseQuat = null;
+  tiltBaseAlpha = null;
 }
 
 function startTilt() {
@@ -652,15 +648,14 @@ function initTilt() {
   if (!window.DeviceOrientationEvent) return;
 
   if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-    // iOS 13+ — must request inside a user gesture
-    window.addEventListener('touchstart', async () => {
+    // iOS — hook onto the START button click (guaranteed user gesture)
+    document.getElementById('preview-btn').addEventListener('click', async () => {
       try {
         const res = await DeviceOrientationEvent.requestPermission();
         if (res === 'granted') startTilt();
       } catch(err) { console.warn('Tilt permission denied', err); }
     }, { once: true });
   } else {
-    // Android / other — just start listening
     startTilt();
   }
 }
@@ -936,21 +931,32 @@ function applyKeyRotation() {
   }
 }
 window.addEventListener('contextmenu', e => e.preventDefault());
+let pinchDist0 = null;
+
+function touchDist(e) {
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
 mainCanvas.addEventListener('touchstart', e => {
   e.preventDefault();
   if (e.touches.length === 2) {
+    dragEnd();
     const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
     const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    dragEnd();
     orbitStart(cx, cy);
+    pinchDist0 = touchDist(e);
   } else {
     orbitEnd();
+    pinchDist0 = null;
     dragStart(e.touches[0].clientX, e.touches[0].clientY);
   }
 }, {passive:false});
 
 window.addEventListener('touchend', e => {
-  if (e.touches.length === 0) { dragEnd(); orbitEnd(); }
+  if (e.touches.length === 0) { dragEnd(); orbitEnd(); pinchDist0 = null; }
+  if (e.touches.length === 1) { pinchDist0 = null; }
 });
 
 mainCanvas.addEventListener('touchmove', e => {
@@ -959,6 +965,14 @@ mainCanvas.addEventListener('touchmove', e => {
     const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
     const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     orbitMove(cx, cy);
+    // Pinch zoom
+    if (pinchDist0 !== null) {
+      const dist = touchDist(e);
+      const scale = pinchDist0 / dist;
+      CAM_DIST = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, CAM_DIST * scale));
+      pinchDist0 = dist;
+      updateCameraPosition();
+    }
   } else {
     dragMove(e.touches[0].clientX, e.touches[0].clientY);
   }
