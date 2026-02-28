@@ -11,7 +11,7 @@
 <title>Pipedream</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { overflow: hidden; font-family: 'Courier New', monospace; }
+  body { overflow: hidden; font-family: Arial, Helvetica, sans-serif; }
   canvas { display: block; }
 
   #main-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }
@@ -33,6 +33,9 @@
   #win button {
     font-size: 12px; letter-spacing: 4px; padding: 10px 28px;
     background: transparent; cursor: pointer;
+    border: 1px solid #ff6600 !important;
+    color: #ff6600 !important;
+    animation: pulse-btn 1.2s ease-in-out infinite;
   }
 
   #confetti-canvas {
@@ -193,8 +196,6 @@ function applyTheme() {
   const win = document.getElementById('win');
   win.style.background = t.win;
   win.style.color      = t.winText;
-  win.querySelector('button').style.border = `1px solid ${t.winText}`;
-  win.querySelector('button').style.color  = t.winText;
   if (window._refreshModeUI) window._refreshModeUI();
   if (typeof applyPreviewTheme === 'function') applyPreviewTheme();
 }
@@ -219,65 +220,87 @@ function mulberry32(seed) {
   };
 }
 
-let currentSeed = 1 * 7919; // deterministic: level * 7919
+let currentSeed = 1 * 7919;
 let rng = mulberry32(currentSeed);
 let mazeLevel = 1;
 let mazeR = 1;
+let mazeScheme = 'manhattan';
+let debugSeedOverride = false;
+let debugR = null;
+let showJunctions = false;
+let winAnimating = false; // null = use level config
 let inPreview = true;
 let timerStart = null;
 let timerElapsed = 0;
 let timerRunning = false;
 
-// Structured progression: each entry is [rx, ry, rz, count, fogEnabled, fogRadius]
-// count = number of levels at this size before advancing
+// Manhattan distance progression: each entry is [R, count, fogEnabled, fogRadius]
+// Nodes at radius R = sum_{r=0}^{R} surface nodes = (2R²+1)*2R/3... easier to just count
+// R=1: 7, R=2: 25, R=3: 63, R=4: 129, R=5: 231
 const PROGRESSION = [
-  [1,1,1, 3, false, null],   // levels 1-3:   3x3x3, no fog
-  [2,1,1, 2, false, null],   // levels 4-5:   4x3x3
-  [2,2,1, 2, false, null],   // levels 6-7:   4x4x3
-  [2,2,2, 2, false, null],   // levels 8-9:   4x4x4
-  [3,2,2, 2, false, null],   // levels 10-11: 5x4x4
-  [3,3,2, 2, false, null],   // levels 12-13: 5x5x4
-  [3,3,3, 2, false, null],   // levels 14-15: 5x5x5
-  // Fog round 1 (radius 3.5)
-  [1,1,1, 3, true,  3.5],
-  [2,1,1, 2, true,  3.5],
-  [2,2,1, 2, true,  3.5],
-  [2,2,2, 2, true,  3.5],
-  [3,2,2, 2, true,  3.5],
-  [3,3,2, 2, true,  3.5],
-  [3,3,3, 2, true,  3.5],
-  [3,3,3, 2, true,  3.5],   // 2 rounds of 5x5x5 with fog 3.5
-  // Fog round 2 (radius 3.0)
-  [1,1,1, 3, true,  3.0],
-  [2,1,1, 2, true,  3.0],
-  [2,2,1, 2, true,  3.0],
-  [2,2,2, 2, true,  3.0],
-  [3,2,2, 2, true,  3.0],
-  [3,3,2, 2, true,  3.0],
-  [3,3,3, 2, true,  3.0],
-  [3,3,3, 2, true,  3.0],
+  [1, 3, false, null],   // levels 1-3:   7 nodes
+  [2, 3, false, null],   // levels 4-6:   25 nodes
+  [3, 3, false, null],   // levels 7-9:   63 nodes
+  [4, 3, false, null],   // levels 10-12: 129 nodes
+  [5, 3, false, null],   // levels 13-15: 231 nodes
+  // Fog round
+  [2, 3, true,  3.5],
+  [3, 3, true,  3.5],
+  [4, 3, true,  3.0],
+  [5, 3, true,  2.5],
 ];
 
 function getLevelConfig(level) {
   let remaining = level;
-  for (const [rx, ry, rz, count, fog, fogR] of PROGRESSION) {
-    if (remaining <= count) return { rx, ry, rz, fog, fogR };
+  for (const [r, count, fog, fogR] of PROGRESSION) {
+    if (remaining <= count) return { r, fog, fogR };
     remaining -= count;
   }
-  // Beyond defined progression: keep last config but keep growing
   const last = PROGRESSION[PROGRESSION.length - 1];
-  return { rx: last[0], ry: last[1], rz: last[2], fog: last[4], fogR: last[5] };
+  return { r: last[0], fog: last[2], fogR: last[3] };
+}
+
+// ─── LEVELS MATRIX ─────────────────────────────────────────────────────────
+// Each entry: { seed, scheme, r, fog, fogR }
+// seed: deterministic seed (level * 7919 if not specified)
+// scheme: maze generation algorithm/shape
+// r: radius (overrides PROGRESSION if set)
+// fog: fog of war enabled
+// fogR: fog radius
+const LEVELS = [
+  // level 1
+  { scheme: 'manhattan', r: 1 },
+  // level 2
+  { scheme: 'manhattan', r: 1 },
+  // level 3
+  { scheme: 'manhattan', r: 1 },
+  // level 4
+  { scheme: 'backtracker', r: 2 },
+  // level 5
+  { scheme: 'manhattan', r: 2 },
+];
+
+function getLevel(level) {
+  const entry = LEVELS[level - 1];
+  const progression = getLevelConfig(level);
+  return {
+    seed:   entry?.seed  ?? level * 7919,
+    scheme: entry?.scheme ?? 'manhattan',
+    r:      entry?.r     ?? progression.r,
+    fog:    entry?.fog   ?? progression.fog,
+    fogR:   entry?.fogR  ?? progression.fogR,
+  };
 }
 
 function applyLevelConfig() {
-  const cfg = getLevelConfig(mazeLevel);
+  const cfg = getLevel(mazeLevel);
+  mazeScheme = cfg.scheme;
   visEnabled = cfg.fog;
   if (cfg.fogR !== null) visRadius = cfg.fogR;
 }
 
 function levelToR(level) {
-  const { rx, ry, rz } = getLevelConfig(level);
-  return [rx, ry, rz];
+  return debugR !== null ? debugR : getLevel(level).r;
 }
 
 function seededShuffle(a) {
@@ -313,41 +336,131 @@ function buildMaze() {
     edges.push(e); a.edges.push(e); b.edges.push(e);
   }
 
-  // Wilson's algorithm on a 3D grid for a uniform spanning tree
-  const [RX, RY, RZ] = levelToR(mazeLevel);
+  const R = levelToR(mazeLevel);
+  const Ri = Math.floor(R); // integer loop bounds
   const DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 
-  // Pre-create all grid nodes
+  // ── SHAPE: build set of valid coords ──────────────────────────────────────
+  const coordSet = new Set();
   const allCoords = [];
-  for (let x = -RX; x <= RX; x++)
-    for (let y = -RY; y <= RY; y++)
-      for (let z = -RZ; z <= RZ; z++)
-        allCoords.push([x, y, z]);
 
-  // Wilson's loop-erased random walk
+  function addCoord(x, y, z) {
+    const k = `${x},${y},${z}`;
+    if (!coordSet.has(k)) { coordSet.add(k); allCoords.push([x, y, z]); }
+  }
+
+  const shape = (mazeScheme === 'prim' || mazeScheme === 'backtracker') ? 'manhattan' : mazeScheme;
+
+  if (shape === 'cubic') {
+    for (let x = -Ri; x <= Ri; x++)
+      for (let y = -Ri; y <= Ri; y++)
+        for (let z = -Ri; z <= Ri; z++)
+          addCoord(x, y, z);
+
+  } else if (shape === 'manhattan') {
+    for (let x = -Ri; x <= Ri; x++)
+      for (let y = -Ri; y <= Ri; y++)
+        for (let z = -Ri; z <= Ri; z++)
+          if (Math.abs(x) + Math.abs(y) + Math.abs(z) <= R)
+            addCoord(x, y, z);
+
+  } else if (shape === 'sphere') {
+    for (let x = -Ri; x <= Ri; x++)
+      for (let y = -Ri; y <= Ri; y++)
+        for (let z = -Ri; z <= Ri; z++)
+          if (x*x + y*y + z*z <= R*R)
+            addCoord(x, y, z);
+
+  } else if (shape === 'cylinder') {
+    for (let x = -Ri; x <= Ri; x++)
+      for (let y = -Ri; y <= Ri; y++)
+        for (let z = -Ri; z <= Ri; z++)
+          if (x*x + z*z <= R*R)
+            addCoord(x, y, z);
+
+  } else if (shape === 'layered') {
+    const layers = Math.max(2, Ri);
+    for (let x = -Ri; x <= Ri; x++)
+      for (let z = -Ri; z <= Ri; z++)
+        for (let y = -layers; y <= layers; y++)
+          if (x*x + z*z <= R*R)
+            addCoord(x, y, z);
+  }
+
+  // ── ALGORITHM ─────────────────────────────────────────────────────────────
+  // Pre-create all nodes so every coord exists (needed for Prim's and backtracker)
+  for (const [x, y, z] of allCoords) nodeAt(x, y, z);
+
   const inTree = new Set();
   const start = nodeAt(0, 0, 0);
   start.isCenter = true;
   inTree.add(start.k);
 
-  const shuffled = seededShuffle([...allCoords]);
-  for (const [sx, sy, sz] of shuffled) {
-    const startKey = `${sx},${sy},${sz}`;
-    if (inTree.has(startKey)) continue;
+  function validNeighbours(x, y, z) {
+    return DIRS
+      .map(([dx,dy,dz]) => [x+dx, y+dy, z+dz])
+      .filter(([nx,ny,nz]) => coordSet.has(`${nx},${ny},${nz}`));
+  }
 
-    // Loop-erased random walk from this node until we hit the tree
-    const walk = [startKey];
-    const walkNext = { [startKey]: null }; // next step in walk
-
-    let cx = sx, cy = sy, cz = sz;
-    while (!inTree.has(`${cx},${cy},${cz}`)) {
-      const dirs = seededShuffle([...DIRS]);
-      let moved = false;
-      for (const [dx, dy, dz] of dirs) {
-        const nx = cx+dx, ny = cy+dy, nz = cz+dz;
-        if (nx < -RX || nx > RX || ny < -RY || ny > RY || nz < -RZ || nz > RZ) continue;
+  if (mazeScheme === 'prim') {
+    // Randomised Prim's — frontier-based, lots of dead ends
+    const frontier = [];
+    const inMaze = new Set([start.k]);
+    function addFrontier(x, y, z) {
+      for (const [nx,ny,nz] of validNeighbours(x,y,z)) {
         const nk = `${nx},${ny},${nz}`;
-        // Erase loop if we revisit
+        if (!inMaze.has(nk)) frontier.push([nx,ny,nz]);
+      }
+    }
+    addFrontier(0, 0, 0);
+    while (frontier.length) {
+      const idx = Math.floor(rng() * frontier.length);
+      const [fx,fy,fz] = frontier.splice(idx, 1)[0];
+      const fk = `${fx},${fy},${fz}`;
+      if (inMaze.has(fk)) continue;
+      const neighbours = validNeighbours(fx,fy,fz).filter(([nx,ny,nz]) => inMaze.has(`${nx},${ny},${nz}`));
+      if (!neighbours.length) continue;
+      const [nx,ny,nz] = neighbours[Math.floor(rng() * neighbours.length)];
+      addEdge(nodeAt(fx,fy,fz), nodeAt(nx,ny,nz));
+      inMaze.add(fk);
+      addFrontier(fx,fy,fz);
+    }
+
+  } else if (mazeScheme === 'backtracker') {
+    // Recursive backtracker — long winding corridors, fewer dead ends
+    const visited = new Set([start.k]);
+    const stack = [[0, 0, 0]];
+    while (stack.length) {
+      const [cx,cy,cz] = stack[stack.length - 1];
+      const unvisited = validNeighbours(cx,cy,cz)
+        .filter(([nx,ny,nz]) => !visited.has(`${nx},${ny},${nz}`));
+      if (unvisited.length) {
+        const [nx,ny,nz] = unvisited[Math.floor(rng() * unvisited.length)];
+        const nk = `${nx},${ny},${nz}`;
+        addEdge(nodeAt(cx,cy,cz), nodeAt(nx,ny,nz));
+        visited.add(nk);
+        stack.push([nx,ny,nz]);
+      } else {
+        stack.pop();
+      }
+    }
+
+  } else {
+    // Wilson's loop-erased random walk (default for all shapes)
+    const shuffled = seededShuffle([...allCoords]);
+    for (const [sx, sy, sz] of shuffled) {
+      const startKey = `${sx},${sy},${sz}`;
+      if (inTree.has(startKey)) continue;
+
+      const walk = [startKey];
+      const walkNext = { [startKey]: null };
+      let cx = sx, cy = sy, cz = sz;
+
+      while (!inTree.has(`${cx},${cy},${cz}`)) {
+        const neighbours = validNeighbours(cx, cy, cz);
+        if (!neighbours.length) break;
+        const [nx,ny,nz] = neighbours[Math.floor(rng() * neighbours.length)];
+        const nk = `${nx},${ny},${nz}`;
         const loopIdx = walk.indexOf(nk);
         if (loopIdx !== -1) {
           walk.splice(loopIdx + 1);
@@ -357,23 +470,17 @@ function buildMaze() {
           walk.push(nk);
           cx = nx; cy = ny; cz = nz;
         }
-        moved = true;
-        break;
       }
-      if (!moved) break;
-    }
 
-    // Add walk to tree
-    for (let i = 0; i < walk.length - 1; i++) {
-      const [ax, ay, az] = walk[i].split(',').map(Number);
-      const next = walkNext[walk[i]];
-      if (!next) continue;
-      const [bx, by, bz] = next;
-      const na = nodeAt(ax, ay, az);
-      const nb = nodeAt(bx, by, bz);
-      addEdge(na, nb);
-      inTree.add(na.k);
-      inTree.add(nb.k);
+      for (let i = 0; i < walk.length - 1; i++) {
+        const [ax,ay,az] = walk[i].split(',').map(Number);
+        const next = walkNext[walk[i]];
+        if (!next) continue;
+        const [bx,by,bz] = next;
+        addEdge(nodeAt(ax,ay,az), nodeAt(bx,by,bz));
+        inTree.add(`${ax},${ay},${az}`);
+        inTree.add(`${bx},${by},${bz}`);
+      }
     }
   }
 
@@ -412,6 +519,8 @@ function shuffle(a) { return seededShuffle(a); }
 let maze, ballMesh;
 
 function buildGeometry() {
+  const levelCfg = getLevel(mazeLevel);
+  if (!debugSeedOverride) currentSeed = levelCfg.seed;
   rng = mulberry32(currentSeed); // reset RNG so seed is reproducible
   while (mazeGroup.children.length) mazeGroup.remove(mazeGroup.children[0]);
   maze = buildMaze();
@@ -423,15 +532,32 @@ function buildGeometry() {
     m.material.transparent = true;
     m.userData.midpoint = new THREE.Vector3().addVectors(e.a.pos, e.b.pos).multiplyScalar(0.5);
     m.userData.matType = 'pipe';
+    m.userData.edgeId = e.id;
     mazeGroup.add(m);
   }
 
-  const jR = PIPE_R * 1.3;
+  const jR = showJunctions ? PIPE_R * 1.3 : PIPE_R * 1.01;
+  const jMat = showJunctions ? junctionMat : pipeMat;
+  const jType = showJunctions ? 'junction' : 'pipe';
   for (const n of maze.nodes) {
-    if (n.edges.length >= 2) {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(jR, 14, 10), junctionMat.clone());
+    if (n.edges.length >= 2 && !n.isCenter && !n.isStart) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(jR, 14, 10), jMat.clone());
       m.material.transparent = true;
       m.position.copy(n.pos);
+      m.userData.midpoint = n.pos;
+      m.userData.matType = jType;
+      mazeGroup.add(m);
+    }
+    if (n.isLeaf && !n.isStart && !n.isCenter) {
+      // End cap: a flat disc perpendicular to the pipe direction
+      const edge = n.edges[0];
+      const other = edge.a === n ? edge.b : edge.a;
+      const dir = new THREE.Vector3().subVectors(n.pos, other.pos).normalize();
+      const capGeo = new THREE.CircleGeometry(PIPE_R, 12);
+      const m = new THREE.Mesh(capGeo, junctionMat.clone());
+      m.material.transparent = true;
+      m.position.copy(n.pos);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
       m.userData.midpoint = n.pos;
       m.userData.matType = 'junction';
       mazeGroup.add(m);
@@ -515,6 +641,7 @@ function updateBall(dt) {
 
 // A pass-through node has exactly 2 edges that are colinear — ball just continues
 function isPassThrough(node, cameFrom) {
+  if (node.isCenter || node.isStart) return false;
   if (node.edges.length !== 2) return false;
   const other = node.edges.find(e => (e.a === node ? e.b : e.a) !== cameFrom);
   if (!other) return false;
@@ -535,15 +662,25 @@ function passThrough(node, cameFrom) {
 function arriveAt(node, cameFrom) {
   if (node.isCenter) {
     stopTimer();
-    const [nrx,nry,nrz] = levelToR(mazeLevel + 1);
     const totalMs = timerElapsed;
     const isRecord = saveBestTime(mazeLevel, totalMs);
-    document.getElementById('win-msg').textContent = `LEVEL ${mazeLevel} COMPLETE`;
-    document.getElementById('win-sub').textContent = `TIME: ${fmtTime(totalMs)}${isRecord ? ' · NEW BEST!' : ''} · NEXT: ${(2*nrx+1)*(2*nry+1)*(2*nrz+1)} NODES`;
-    document.getElementById('win').classList.add('show');
-    if (isRecord) { launchConfetti(); playYay(); } else { playWin(); }
     ball.vel = 0;
     ball.stopped = true;
+
+    // Pipe celebration → then show overlay → then confetti if record
+    launchPipeAnimation(() => {
+      const winSub = document.getElementById('win-sub');
+      document.getElementById('win-msg').textContent = `LEVEL ${mazeLevel} COMPLETE`;
+      winSub.textContent = `TIME: ${fmtTime(totalMs)}`;
+      winSub.style.fontSize = '';
+      document.getElementById('win').classList.add('show');
+
+      if (isRecord) {
+        playRecordStab();
+        launchConfetti();
+        animateNewBest(winSub, `TIME: ${fmtTime(totalMs)} · NEW BEST!`);
+      }
+    });
     return;
   }
 
@@ -612,43 +749,64 @@ function ballWorldPos() {
   return ballLocalPos().clone().applyMatrix4(mazeGroup.matrixWorld);
 }
 
-const drag = { on: false, lx: 0, ly: 0, pivot: new THREE.Vector3() };
+const drag = { on: false, lx: 0, ly: 0, axis: null, accX: 0, accY: 0 };
 const orbit = { on: false, lx: 0, ly: 0 };
 
 function dragStart(x, y) {
   drag.on = true; drag.lx = x; drag.ly = y;
-  const bp = ballWorldPos();
-  drag.pivot.set(bp.x, bp.y, bp.z);
+  drag.axis = null; drag.accX = 0; drag.accY = 0;
   ball.stopped = false;
 }
 
 function dragEnd() { drag.on = false; }
 
 function dragMove(x, y) {
-  if (!drag.on) return;
+  if (!drag.on || winAnimating) return;
   ball.stopped = false;
   const dx = x - drag.lx, dy = y - drag.ly;
   drag.lx = x; drag.ly = y;
+
+  if (!drag.axis) {
+    drag.accX += Math.abs(dx);
+    drag.accY += Math.abs(dy);
+    if (drag.accX + drag.accY > 6)
+      drag.axis = drag.accX > drag.accY ? 'h' : 'v';
+    else return;
+  }
+
   const s = 0.006;
-
-  // Turntable: horizontal spins around world Y,
-  // vertical tilts around camera's right axis.
   const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-  const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dx * s);
-  const qX = new THREE.Quaternion().setFromAxisAngle(camRight, dy * s * (invertY ? -1 : 1));
-  const q  = new THREE.Quaternion().multiplyQuaternions(qY, qX);
-
-  const pivot = drag.pivot;
-  mazeGroup.position.sub(pivot);
-  mazeGroup.position.applyQuaternion(q);
-  mazeGroup.position.add(pivot);
+  let q;
+  if (drag.axis === 'h') {
+    q = new THREE.Quaternion().setFromAxisAngle(camUp, dx * s);
+  } else {
+    q = new THREE.Quaternion().setFromAxisAngle(camRight, dy * s * (invertY ? -1 : 1));
+  }
   mazeGroup.quaternion.premultiply(q);
 }
 
-function orbitStart(x, y) { orbit.on = true; orbit.lx = x; orbit.ly = y; orbit.axis = null; orbit.accX = 0; orbit.accY = 0; }
-function orbitEnd()        { orbit.on = false; }
+const orbitReturn = { active: false, t: 0, fromDir: new THREE.Vector3(), fromUp: new THREE.Vector3(), toDir: new THREE.Vector3(), toUp: new THREE.Vector3() };
+
+function orbitStart(x, y) {
+  orbit.on = true; orbit.lx = x; orbit.ly = y; orbit.axis = null; orbit.accX = 0; orbit.accY = 0;
+  orbitReturn.active = false; // cancel any in-progress return
+  // Save canonical camera direction to return to
+  orbit.savedDir = camDir.clone();
+  orbit.savedUp  = camUp.clone();
+}
+function orbitEnd() {
+  orbit.on = false;
+  if (!orbit.savedDir) return;
+  // Start lerp back to saved position
+  orbitReturn.active = true;
+  orbitReturn.t = 0;
+  orbitReturn.fromDir.copy(camDir);
+  orbitReturn.fromUp.copy(camUp);
+  orbitReturn.toDir.copy(orbit.savedDir);
+  orbitReturn.toUp.copy(orbit.savedUp);
+}
 function orbitMove(x, y) {
-  if (!orbit.on) return;
+  if (!orbit.on || winAnimating) return;
   const dx = x - orbit.lx, dy = y - orbit.ly;
   orbit.lx = x; orbit.ly = y;
 
@@ -688,6 +846,27 @@ mainCanvas.addEventListener('mousemove', e => {
   dragMove(e.clientX, e.clientY);
 });
 mainCanvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ─── KEY CONTROLS ──────────────────────────────────────────────────────────
+const keysDown = new Set();
+window.addEventListener('keydown', e => keysDown.add(e.key.toLowerCase()));
+window.addEventListener('keyup',   e => keysDown.delete(e.key.toLowerCase()));
+
+function applyKeyRotation() {
+  const rolling = keysDown.has('q') || keysDown.has('e');
+  if (!rolling || winAnimating) return;
+  ball.stopped = false;
+  const s = 0.05;
+  const dir = camDir.clone().normalize();
+  if (keysDown.has('q')) {
+    mazeGroup.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(dir,  s));
+  }
+  if (keysDown.has('e')) {
+    mazeGroup.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(dir, -s));
+  }
+}
 window.addEventListener('contextmenu', e => e.preventDefault());
 mainCanvas.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -775,14 +954,55 @@ let invertY = localStorage.getItem('pipemaze-invertY') === '1';
 
 
 // ─── DEBUG LEVEL CONTROLS ──────────────────────────────────────────────────
+let showPath = false;
+let pathEdgeIds = new Set();
+
+function highlightPath() {
+  if (!maze) return;
+  const ballEdge = maze.edges[ball.edgeIdx];
+  const ballNode = ball.t < 0.5 ? ballEdge.a : ballEdge.b;
+  const center = maze.center;
+  const prev = new Map();
+  const queue = [ballNode];
+  prev.set(ballNode.k, null);
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === center) break;
+    for (const e of cur.edges) {
+      const nb = e.a === cur ? e.b : e.a;
+      if (!prev.has(nb.k)) { prev.set(nb.k, { node: cur, edge: e }); queue.push(nb); }
+    }
+  }
+  pathEdgeIds = new Set();
+  let cur = center;
+  while (prev.get(cur.k)) {
+    const { node, edge } = prev.get(cur.k);
+    pathEdgeIds.add(edge.id);
+    cur = node;
+  }
+}
+
+function clearPathHighlight() {
+  pathEdgeIds = new Set();
+}
+
 (function buildDebugUI() {
   const wrap = document.createElement('div');
   wrap.style.cssText = `
     position:fixed; bottom:100px; right:16px; z-index:10;
-    display:flex; gap:0; align-items:stretch;
-    border-radius:4px; overflow:hidden;
-    display:none;
+    display:flex; flex-direction:column; gap:4px; align-items:stretch;
   `;
+
+  const bg = 'rgba(10,15,24,0.9)';
+  const c  = 'rgba(180,210,255,0.4)';
+  const cOn = 'rgba(180,210,255,1)';
+  const bc = 'rgba(180,210,255,0.2)';
+
+  function makeRow() {
+    const r = document.createElement('div');
+    r.style.cssText = `display:flex; gap:0; border-radius:4px; overflow:hidden; border:1px solid ${bc};`;
+    return r;
+  }
 
   function makeBtn(label) {
     const b = document.createElement('button');
@@ -790,69 +1010,156 @@ let invertY = localStorage.getItem('pipemaze-invertY') === '1';
     b.style.cssText = `
       font:10px 'Courier New',monospace; letter-spacing:2px;
       padding:6px 12px; border:none; cursor:pointer;
+      background:${bg}; color:${c};
       transition:background 0.15s,color 0.15s;
     `;
     return b;
   }
 
-  const prevBtn = makeBtn('◀ LEVEL');
-  const levelLbl = document.createElement('div');
-  levelLbl.style.cssText = `
-    font:10px 'Courier New',monospace; letter-spacing:2px;
-    padding:6px 10px; min-width:60px; text-align:center;
-  `;
-  const nextBtn = makeBtn('LEVEL ▶');
+  function makeLbl(text) {
+    const d = document.createElement('div');
+    d.style.cssText = `font:10px 'Courier New',monospace; letter-spacing:2px; padding:6px 10px; background:${bg}; color:${c};`;
+    d.textContent = text;
+    return d;
+  }
+
+  // ── Level row ──
+  const levelRow = makeRow();
+  const prevBtn  = makeBtn('◀');
+  const levelLbl = makeLbl('L1 R=1');
+  levelLbl.style.cssText += `min-width:80px; text-align:center; border-left:1px solid ${bc}; border-right:1px solid ${bc};`;
+  const nextBtn  = makeBtn('▶');
 
   function updateLabel() {
-    const [rx,ry,rz] = levelToR(mazeLevel);
-    levelLbl.textContent = `L${mazeLevel} (${(2*rx+1)*(2*ry+1)*(2*rz+1)}n)`;
-  }
-  updateLabel();
-
-  function applyColors() {
-    const bg = isDark ? 'rgba(10,15,24,0.9)'    : 'rgba(221,228,236,0.9)';
-    const c  = isDark ? 'rgba(180,210,255,0.4)' : 'rgba(10,26,58,0.4)';
-    const bc = isDark ? 'rgba(180,210,255,0.2)' : 'rgba(10,26,58,0.2)';
-    wrap.style.border = `1px solid ${bc}`;
-    [prevBtn, nextBtn].forEach(b => {
-      b.style.background = bg; b.style.color = c;
-    });
-    levelLbl.style.background = bg; levelLbl.style.color = c;
-    levelLbl.style.borderLeft = levelLbl.style.borderRight = `1px solid ${bc}`;
+    const d = maze ? maze.maxDist : '?';
+    levelLbl.textContent = `L${mazeLevel} R=${levelToR(mazeLevel)} D=${d}`;
+    rVal.textContent = levelToR(mazeLevel);
   }
 
-  prevBtn.addEventListener('click', () => {
-    if (mazeLevel <= 1) return;
-    mazeLevel--;
+  function rebuildMaze(keepScheme = false) {
     winPlayed = false;
-    currentSeed = mazeLevel * 7919;
+    showPath = false;
+    pathBtn.style.color = c; pathBtn.style.background = bg;
     document.getElementById('win').classList.remove('show');
     mazeGroup.quaternion.set(0,0,0,1);
     mazeGroup.position.set(0,0,0);
-    applyLevelConfig();
+    if (!keepScheme) applyLevelConfig();
     buildGeometry(); initBall(); updateLabel(); showPreview();
+  }
+
+  function rebuild() {
+    debugSeedOverride = false;
+    debugR = null;
+    currentSeed = getLevel(mazeLevel).seed;
+    seedVal.textContent = currentSeed;
+    rVal.textContent = levelToR(mazeLevel);
+    rebuildMaze();
+  }
+
+  prevBtn.addEventListener('click', () => { if (mazeLevel > 1) { mazeLevel--; rebuild(); } });
+  nextBtn.addEventListener('click', () => { mazeLevel++; rebuild(); });
+
+  levelRow.appendChild(prevBtn);
+  levelRow.appendChild(levelLbl);
+  levelRow.appendChild(nextBtn);
+
+  // ── Scheme dropdown ──
+  const schemeRow = makeRow();
+  const schemeLbl = makeLbl('SCHEME');
+  schemeLbl.style.borderRight = `1px solid ${bc}`;
+  const schemes = ['cubic','manhattan','sphere','cylinder','layered','prim','backtracker'];
+  const select = document.createElement('select');
+  select.style.cssText = `
+    font:10px 'Courier New',monospace; letter-spacing:2px;
+    padding:6px 10px; border:none; cursor:pointer;
+    background:${bg}; color:${cOn}; outline:none; flex:1;
+  `;
+  schemes.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s.toUpperCase();
+    if (s === mazeScheme) opt.selected = true;
+    select.appendChild(opt);
   });
+  select.addEventListener('change', () => { mazeScheme = select.value; rebuildMaze(true); });
+  schemeRow.appendChild(schemeLbl);
+  schemeRow.appendChild(select);
 
-  nextBtn.addEventListener('click', () => {
-    mazeLevel++;
-    winPlayed = false;
-    currentSeed = mazeLevel * 7919;
-    document.getElementById('win').classList.remove('show');
-    mazeGroup.quaternion.set(0,0,0,1);
-    mazeGroup.position.set(0,0,0);
-    applyLevelConfig();
-    buildGeometry(); initBall(); updateLabel(); showPreview();
+  // ── R row ──
+  const rRow = makeRow();
+  const rLbl = makeLbl('R');
+  rLbl.style.borderRight = `1px solid ${bc}`;
+  const rVal = makeLbl(levelToR(mazeLevel));
+  rVal.style.cssText += `flex:1; text-align:center; color:${cOn};`;
+  const rDownBtn = makeBtn('▼');
+  rDownBtn.style.borderLeft = `1px solid ${bc}`;
+  const rUpBtn = makeBtn('▲');
+  rUpBtn.style.borderLeft = `1px solid ${bc}`;
+
+  function updateR(delta) {
+    const current = debugR !== null ? debugR : levelToR(mazeLevel);
+    debugR = Math.max(1, Math.round((current + delta) * 2) / 2); // 0.5 steps
+    rVal.textContent = debugR;
+    rebuildMaze(true);
+  }
+
+  rDownBtn.addEventListener('click', () => updateR(-0.5));
+  rUpBtn.addEventListener('click', () => updateR(0.5));
+  rRow.appendChild(rLbl);
+  rRow.appendChild(rVal);
+  rRow.appendChild(rDownBtn);
+  rRow.appendChild(rUpBtn);
+
+  // ── Seed row ──
+  const seedRow = makeRow();
+  const seedLbl = makeLbl('SEED');
+  seedLbl.style.borderRight = `1px solid ${bc}`;
+  const seedVal = makeLbl(currentSeed);
+  seedVal.style.cssText += `flex:1; text-align:center; color:${cOn};`;
+  const randBtn = makeBtn('RANDOM');
+  randBtn.style.borderLeft = `1px solid ${bc}`;
+  randBtn.addEventListener('click', () => {
+    debugSeedOverride = true;
+    currentSeed = Math.floor(Math.random() * 99999) + 1;
+    seedVal.textContent = currentSeed;
+    rebuildMaze(true);
   });
+  seedRow.appendChild(seedLbl);
+  seedRow.appendChild(seedVal);
+  seedRow.appendChild(randBtn);
 
-  const origRefresh = window._refreshModeUI;
-  window._refreshModeUI = () => { origRefresh && origRefresh(); applyColors(); };
+  // ── Path highlight button ──
+  const pathRow = makeRow();
+  const pathBtn = makeBtn('SHOW PATH');
+  pathBtn.style.flex = '1';
+  pathBtn.addEventListener('click', () => {
+    showPath = !showPath;
+    pathBtn.style.color = showPath ? cOn : c;
+    pathBtn.style.background = showPath ? 'rgba(180,210,255,0.15)' : bg;
+    if (showPath) highlightPath(); else clearPathHighlight();
+  });
+  pathRow.appendChild(pathBtn);
 
-  wrap.appendChild(prevBtn);
-  wrap.appendChild(levelLbl);
-  wrap.appendChild(nextBtn);
+  // ── Junction toggle button ──
+  const junctionRow = makeRow();
+  const junctionBtn = makeBtn('SHOW JUNCTIONS');
+  junctionBtn.style.flex = '1';
+  junctionBtn.addEventListener('click', () => {
+    showJunctions = !showJunctions;
+    junctionBtn.style.color = showJunctions ? cOn : c;
+    junctionBtn.style.background = showJunctions ? 'rgba(180,210,255,0.15)' : bg;
+    rebuildMaze(true);
+  });
+  junctionRow.appendChild(junctionBtn);
+
+  wrap.appendChild(levelRow);
+  wrap.appendChild(schemeRow);
+  wrap.appendChild(rRow);
+  wrap.appendChild(seedRow);
+  wrap.appendChild(pathRow);
+  wrap.appendChild(junctionRow);
   document.body.appendChild(wrap);
-  applyColors();
 })();
+
 
 // ─── BEST TIMES ────────────────────────────────────────────────────────────
 const bestTimes = JSON.parse(localStorage.getItem('pipemaze-besttimes') || '{}');
@@ -995,6 +1302,9 @@ function animate() {
   mazeGroup.updateMatrixWorld();
   if (!inPreview) {
     updateBall(dt);
+    applyKeyRotation();
+  } else {
+    applyKeyRotation(); // allow roll during preview
     ballLight.position.copy(ballWorldPos());
   }
   if (ballMesh) ballMesh.visible = !inPreview;
@@ -1007,7 +1317,31 @@ function animate() {
 
   // Camera orbits exit node — update each frame as maze moves
   mazeGroup.updateMatrixWorld();
+  if (orbitReturn.active && !orbit.on) {
+    orbitReturn.t = Math.min(1, orbitReturn.t + 0.06);
+    const ease = 1 - Math.pow(1 - orbitReturn.t, 3); // cubic ease-out
+    camDir.lerpVectors(orbitReturn.fromDir, orbitReturn.toDir, ease).normalize();
+    camUp.lerpVectors(orbitReturn.fromUp, orbitReturn.toUp, ease).normalize();
+    if (orbitReturn.t >= 1) orbitReturn.active = false;
+  }
   updateCameraPosition();
+
+  // Keep path highlight current as ball moves
+  if (showPath) highlightPath();
+
+  // Depth shading: darken pipes further from camera
+  const camPos = camera.position;
+  const worldMp = new THREE.Vector3();
+  // Find min/max depth across all children for normalisation
+  let minD = Infinity, maxD = -Infinity;
+  for (const child of mazeGroup.children) {
+    if (!child.userData.midpoint || child.userData.isBall) continue;
+    worldMp.copy(child.userData.midpoint).applyMatrix4(mazeGroup.matrixWorld);
+    const d = camPos.distanceTo(worldMp);
+    if (d < minD) minD = d;
+    if (d > maxD) maxD = d;
+  }
+  const depthRange = maxD - minD || 1;
 
   // Fog of war: fade opacity based on distance to ball or exit (skip during preview)
   const ballLocal = ballLocalPos();
@@ -1016,6 +1350,24 @@ function animate() {
     const mp = child.userData.midpoint;
     if (!mp || !child.material) continue;
     if (child.userData.isBall) { child.material.opacity = 1; child.visible = !inPreview; continue; }
+
+    // Depth shading — skip during win animation and special nodes
+    const matType = child.userData.matType;
+    if (!winAnimating && (matType === 'pipe' || matType === 'junction')) {
+      worldMp.copy(mp).applyMatrix4(mazeGroup.matrixWorld);
+      const depth = (camPos.distanceTo(worldMp) - minD) / depthRange;
+      const bright = 1.0 - depth * 0.65;
+      if (showPath && child.userData.edgeId !== undefined && pathEdgeIds.has(child.userData.edgeId)) {
+        child.material.color.setRGB(bright, bright * 0.93, 0);
+      } else {
+        const base = (matType === 'junction') ? THEMES.dark.junction : THEMES.dark.pipe;
+        const r = ((base >> 16) & 0xff) / 255;
+        const g = ((base >> 8)  & 0xff) / 255;
+        const b = ( base        & 0xff) / 255;
+        child.material.color.setRGB(r * bright, g * bright, b * bright);
+      }
+    }
+
     if (!visEnabled || inPreview) { child.material.opacity = 1; child.visible = true; continue; }
     const dBall = mp.distanceTo(ballLocal);
     const dExit = mp.distanceTo(exitLocal);
@@ -1053,7 +1405,8 @@ function animate() {
 function nextLevel() {
   winPlayed = false;
   mazeLevel++;
-  currentSeed = mazeLevel * 7919;
+  debugSeedOverride = false;
+  currentSeed = getLevel(mazeLevel).seed;
   document.getElementById('win').classList.remove('show');
   mazeGroup.quaternion.set(0,0,0,1);
   mazeGroup.position.set(0,0,0);
@@ -1079,10 +1432,11 @@ function showPreview() {
   timerRunning = false;
   timerElapsed = 0;
   const cfg = getLevelConfig(mazeLevel);
-  const [rx,ry,rz] = levelToR(mazeLevel);
+  const r = levelToR(mazeLevel);
   document.getElementById('preview-msg').textContent = `LEVEL ${mazeLevel}`;
   const best = bestTimes[mazeLevel];
-  const sizeStr = `${(2*rx+1)}×${(2*ry+1)}×${(2*rz+1)} MAZE${cfg.fog ? ` · FOG R=${cfg.fogR}` : ''}`;
+  const pathLen = maze ? maze.maxDist : '?';
+  const sizeStr = `${mazeScheme.toUpperCase()} R=${r} · DIFFICULTY ${pathLen}${cfg.fog ? ` · FOG` : ''}`;
   document.getElementById('preview-sub').textContent =
     sizeStr + (best ? ` · BEST: ${fmtTime(best)}` : '');
   document.getElementById('preview').classList.add('show');
@@ -1212,22 +1566,90 @@ function playClunk(speed) {
 function playWin() {
   if (winPlayed) return;
   winPlayed = true;
+  launchPipeAnimation();
+}
+
+// ─── PIPE CELEBRATION ANIMATION ────────────────────────────────────────────
+let pipeAnimAnim = null;
+
+function playPipeTune() {
   const ctx = getAudioCtx();
-  // Fade out roll sound
   rollGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-  const notes = [261.6, 329.6, 392, 523.2];
-  notes.forEach((freq, i) => {
-    const t   = ctx.currentTime + i * 0.15;
+
+  // Jazzy fanfare: arpeggios + chord stabs over 2 seconds
+  const t0 = ctx.currentTime;
+  const notes = [
+    // fast ascending arpeggio
+    [523.2,  0.00, 0.12, 'triangle', 0.28],
+    [659.3,  0.10, 0.12, 'triangle', 0.28],
+    [783.9,  0.20, 0.12, 'triangle', 0.28],
+    [1046.5, 0.30, 0.18, 'triangle', 0.35],
+    // chord stab
+    [523.2,  0.52, 0.25, 'square',   0.12],
+    [659.3,  0.52, 0.25, 'square',   0.12],
+    [783.9,  0.52, 0.25, 'square',   0.12],
+    // second arpeggio up
+    [587.3,  0.82, 0.10, 'triangle', 0.28],
+    [740.0,  0.92, 0.10, 'triangle', 0.28],
+    [880.0,  1.02, 0.10, 'triangle', 0.28],
+    [1174.7, 1.12, 0.20, 'triangle', 0.35],
+    // big chord finale
+    [523.2,  1.38, 0.45, 'square',   0.10],
+    [659.3,  1.38, 0.45, 'square',   0.10],
+    [783.9,  1.38, 0.45, 'square',   0.10],
+    [1046.5, 1.38, 0.45, 'square',   0.10],
+    // sparkle on top
+    [2093.0, 1.55, 0.25, 'sine',     0.18],
+    [2637.0, 1.70, 0.25, 'sine',     0.18],
+  ];
+
+  notes.forEach(([freq, offset, dur, type, vol]) => {
+    const t   = t0 + offset;
     const osc = ctx.createOscillator();
     const g   = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = type;
     osc.frequency.value = freq;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.3, t + 0.03);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     osc.connect(g); g.connect(ctx.destination);
-    osc.start(t); osc.stop(t + 0.5);
+    osc.start(t); osc.stop(t + dur + 0.05);
   });
+}
+
+function launchPipeAnimation(onComplete) {
+  const DURATION = 2000;
+  const BEAT_INTERVAL = 180;
+  const COLORS = [0xff6600, 0xffcc00, 0x00ccff, 0xff3399, 0x33ff99, 0xaa44ff, 0xffffff];
+  const pipes = mazeGroup.children.filter(c =>
+    c.userData.matType === 'pipe' || c.userData.matType === 'junction');
+  if (!pipes.length) { onComplete?.(); return; }
+
+  winAnimating = true;
+  playPipeTune();
+
+  const start = performance.now();
+  let lastBeat = 0;
+
+  if (pipeAnimAnim) cancelAnimationFrame(pipeAnimAnim);
+
+  function step(now) {
+    const elapsed = now - start;
+    if (elapsed >= DURATION) {
+      winAnimating = false;
+      pipes.forEach(p => p.material.color.setHex(THEMES.dark.pipe));
+      onComplete?.();
+      return;
+    }
+    if (elapsed - lastBeat >= BEAT_INTERVAL) {
+      lastBeat = elapsed;
+      pipes.forEach(p => {
+        p.material.color.setHex(COLORS[Math.floor(Math.random() * COLORS.length)]);
+      });
+    }
+    pipeAnimAnim = requestAnimationFrame(step);
+  }
+  pipeAnimAnim = requestAnimationFrame(step);
 }
 
 // Initialise audio context on first user interaction
@@ -1244,23 +1666,28 @@ function launchConfetti() {
   confettiCanvas.height = window.innerHeight;
   confettiCanvas.style.display = 'block';
   const colors = ['#ff6600','#ffcc00','#00ccff','#ff3399','#33ff99','#ffffff'];
-  confettiParticles = Array.from({ length: 160 }, () => ({
-    x: Math.random() * confettiCanvas.width,
-    y: -10 - Math.random() * 80,
-    r: 4 + Math.random() * 6,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    vx: (Math.random() - 0.5) * 4,
-    vy: 2 + Math.random() * 4,
-    angle: Math.random() * Math.PI * 2,
-    spin: (Math.random() - 0.5) * 0.2,
-    shape: Math.random() < 0.5 ? 'rect' : 'circle',
-  }));
+  const cx = confettiCanvas.width / 2;
+  const cy = confettiCanvas.height / 2;
+  confettiParticles = Array.from({ length: 160 }, () => {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 4 + Math.random() * 10;
+    return {
+      x: cx, y: cy,
+      r: 4 + Math.random() * 6,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      angle: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * 0.3,
+      shape: Math.random() < 0.5 ? 'rect' : 'circle',
+    };
+  });
   if (confettiAnim) cancelAnimationFrame(confettiAnim);
-  let ttl = 180;
+  let ttl = 180; // 3 seconds at 60fps
   function step() {
     confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
     confettiParticles.forEach(p => {
-      p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.angle += p.spin;
+      p.x += p.vx; p.y += p.vy; p.vy += 0.35; p.vx *= 0.99; p.angle += p.spin;
       confettiCtx.save();
       confettiCtx.translate(p.x, p.y);
       confettiCtx.rotate(p.angle);
@@ -1271,28 +1698,61 @@ function launchConfetti() {
     });
     ttl--;
     if (ttl > 0) confettiAnim = requestAnimationFrame(step);
-    else { confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height); confettiCanvas.style.display = 'none'; }
+    else {
+      confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      confettiCanvas.style.display = 'none';
+    }
   }
   confettiAnim = requestAnimationFrame(step);
 }
 
-function playYay() {
+
+// ─── RECORD STAB SOUND & TEXT ANIMATION ────────────────────────────────────
+function playRecordStab() {
   const ctx = getAudioCtx();
-  const t = ctx.currentTime;
-  // Bright upward glide + harmonics = "yay!" feel
-  const freqs = [400, 600, 800];
-  freqs.forEach((f, i) => {
+  const t0 = ctx.currentTime;
+
+  // Sharp stab chord
+  [[220, 0.00], [277.2, 0.00], [329.6, 0.00], [440, 0.00]].forEach(([freq, off]) => {
     const osc = ctx.createOscillator();
     const g   = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(f * 0.7, t + i * 0.04);
-    osc.frequency.exponentialRampToValueAtTime(f * 1.4, t + i * 0.04 + 0.18);
-    g.gain.setValueAtTime(0, t + i * 0.04);
-    g.gain.linearRampToValueAtTime(0.25, t + i * 0.04 + 0.04);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.04 + 0.5);
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0 + off);
+    g.gain.linearRampToValueAtTime(0.15, t0 + off + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + off + 0.18);
     osc.connect(g); g.connect(ctx.destination);
-    osc.start(t + i * 0.04); osc.stop(t + i * 0.04 + 0.5);
+    osc.start(t0 + off); osc.stop(t0 + off + 0.2);
   });
+
+  // Punchy bass thud after stab
+  const punch = ctx.createOscillator();
+  const punchG = ctx.createGain();
+  punch.type = 'sine';
+  punch.frequency.setValueAtTime(180, t0 + 0.12);
+  punch.frequency.exponentialRampToValueAtTime(40, t0 + 0.35);
+  punchG.gain.setValueAtTime(0, t0 + 0.12);
+  punchG.gain.linearRampToValueAtTime(0.5, t0 + 0.14);
+  punchG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
+  punch.connect(punchG); punchG.connect(ctx.destination);
+  punch.start(t0 + 0.12); punch.stop(t0 + 0.5);
+}
+
+function animateNewBest(el, finalText) {
+  const START_SIZE = 42;
+  const END_SIZE   = 14;
+  const DURATION   = 600;
+  const start = performance.now();
+  el.textContent = finalText;
+  el.style.opacity = '1';
+  el.style.color = '#ffcc00';
+  function step(now) {
+    const t    = Math.min(1, (now - start) / DURATION);
+    const ease = 1 - Math.pow(1 - t, 3);
+    el.style.fontSize = `${START_SIZE + (END_SIZE - START_SIZE) * ease}px`;
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 buildGeometry();
