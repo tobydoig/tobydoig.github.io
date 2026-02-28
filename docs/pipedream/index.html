@@ -627,7 +627,7 @@ function onOrientationEvent(e) {
   tiltBaseGamma = e.gamma;
 
   // Rotate around camera's forward axis only (like Z control)
-  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), dGamma * TILT_SENSITIVITY);
+  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), -dGamma * TILT_SENSITIVITY);
   mazeGroup.quaternion.premultiply(q);
   ball.stopped = false;
 }
@@ -846,17 +846,7 @@ function dragMove(x, y) {
   ball.stopped = false;
   const dx = x - drag.lx, dy = y - drag.ly;
   drag.lx = x; drag.ly = y;
-
-  if (!drag.axis) {
-    drag.accX += Math.abs(dx);
-    drag.accY += Math.abs(dy);
-    if (drag.accX + drag.accY > 6)
-      drag.axis = drag.accX > drag.accY ? 'h' : 'v';
-    else return;
-  }
-
-  if (drag.axis === 'h') rotateMaze(dx, 0);
-  else                   rotateMaze(0, dy);
+  if (dx !== 0 || dy !== 0) rotateMaze(dx, dy);
 }
 
 const orbitReturn = { active: false, t: 0, fromDir: new THREE.Vector3(), fromUp: new THREE.Vector3(), toDir: new THREE.Vector3(), toUp: new THREE.Vector3(), fromVIEW: 9, toVIEW: 9, fromQuat: new THREE.Quaternion(), toQuat: new THREE.Quaternion() };
@@ -920,7 +910,7 @@ mainCanvas.addEventListener('mousedown',  e => {
   else dragStart(e.clientX, e.clientY);
 });
 window.addEventListener('mouseup', e => {
-  if (e.button === 2) orbitEnd();
+  if (e.button === 2) { if (orbit.on) orbitEnd(); }
   else dragEnd();
 });
 mainCanvas.addEventListener('mousemove', e => {
@@ -974,7 +964,11 @@ mainCanvas.addEventListener('touchstart', e => {
 }, {passive:false});
 
 window.addEventListener('touchend', e => {
-  if (e.touches.length === 0) { dragEnd(); orbitEnd(); pinchDist0 = null; }
+  if (e.touches.length === 0) {
+    dragEnd();
+    if (orbit.on) orbitEnd();
+    pinchDist0 = null;
+  }
   if (e.touches.length === 1) { pinchDist0 = null; }
 });
 
