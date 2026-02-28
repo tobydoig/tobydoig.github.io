@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Pipedream">
+<meta name="apple-mobile-web-app-title" content="Where's the Exit">
 <meta name="theme-color" content="#0a0f18">
 <link rel="manifest" href="manifest.json">
-<title>Pipedream</title>
+<title>Where's the Exit?</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-touch-callout: none; }
   body {
@@ -27,10 +27,37 @@
   #overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 5; }
 
   #ui {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    font-size: 11px; letter-spacing: 3px;
-    pointer-events: auto; z-index: 6; white-space: nowrap;
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 18px; letter-spacing: 5px;
+    pointer-events: auto; z-index: 6; white-space: nowrap; opacity: 0.7;
   }
+
+  #exit-btn {
+    position: fixed; top: 12px; right: 16px; z-index: 10;
+    font-size: 13px; letter-spacing: 3px; padding: 8px 14px;
+    background: transparent; cursor: pointer; pointer-events: auto;
+    border: 1px solid rgba(255,102,0,0.4); color: rgba(255,102,0,0.7);
+    font-family: Arial, Helvetica, sans-serif;
+    display: none;
+  }
+  #exit-btn.show { display: block; }
+
+  #exit-confirm {
+    display: none; position: fixed; inset: 0;
+    align-items: center; justify-content: center; flex-direction: column;
+    gap: 20px; z-index: 35; background: rgba(0,0,0,0.6);
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  #exit-confirm.show { display: flex; }
+  #exit-confirm-msg { font-size: 18px; letter-spacing: 4px; opacity: 0.9; }
+  #exit-confirm-sub { font-size: 13px; letter-spacing: 2px; opacity: 0.5; }
+  #exit-confirm-btns { display: flex; gap: 16px; margin-top: 8px; }
+  #exit-confirm-btns button {
+    font-size: 12px; letter-spacing: 3px; padding: 10px 28px;
+    background: transparent; cursor: pointer; font-family: inherit;
+  }
+  #exit-yes { border: 1px solid #ff6600; color: #ff6600; }
+  #exit-no  { border: 1px solid rgba(180,210,255,0.3); color: rgba(180,210,255,0.6); }
 
   #win {
     display: none; position: fixed; inset: 0;
@@ -75,9 +102,66 @@
     50%       { opacity: 0.7; box-shadow: 0 0 0 8px rgba(255,102,0,0); }
   }
 
+  #splash {
+    display: none; position: fixed; inset: 0;
+    flex-direction: column; align-items: center; justify-content: center;
+    z-index: 40; background: #0a0f18; color: rgba(180,210,255,0.9);
+    font-family: Arial, Helvetica, sans-serif;
+    padding: 32px 24px;
+    gap: 8px;
+  }
+  #splash.show { display: flex; }
+  #splash-title {
+    font-size: clamp(26px, 7vw, 52px); letter-spacing: clamp(4px, 1.5vw, 10px);
+    color: #ff6600; text-align: center; font-weight: bold;
+  }
+  #splash-tagline {
+    font-size: clamp(10px, 2vw, 12px); letter-spacing: 4px; opacity: 0.4;
+    text-align: center;
+  }
+  #splash-maze {
+    width: min(calc(70vw * 1.5), min(calc(70vh * 1.5), 540px));
+    height: min(calc(70vw * 1.5), min(calc(70vh * 1.5), 540px));
+    flex-shrink: 0;
+    border: 1px solid rgba(255,102,0,0.25);
+    overflow: hidden; position: relative;
+    margin: 16px 0;
+  }
+  #splash-maze canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; display: block; }
+  .splash-text {
+    font-size: clamp(12px, 2.8vw, 15px); line-height: 1.6;
+    color: rgba(180,210,255,0.8); text-align: center;
+    max-width: 400px;
+  }
+  #splash-btn {
+    font-size: clamp(12px, 2.8vw, 14px); letter-spacing: 5px; padding: 12px 44px;
+    background: transparent; cursor: pointer; pointer-events: auto;
+    border: 1px solid #ff6600; color: #ff6600; font-family: inherit;
+    margin-top: 8px;
+    animation: pulse-btn 1.2s ease-in-out infinite;
+  }
+
+  #preview-nav {
+    display: flex; align-items: center; gap: 20px;
+    pointer-events: auto; margin-bottom: 4px;
+  }
+  #preview-nav button {
+    font-size: 11px; letter-spacing: 3px; padding: 6px 16px;
+    background: transparent; cursor: pointer;
+    border: 1px solid rgba(180,210,255,0.3) !important;
+    color: rgba(180,210,255,0.6) !important;
+    animation: none !important;
+  }
+  #preview-nav button:disabled {
+    opacity: 0.2; cursor: default;
+  }
+  #preview-level-label {
+    font-size: 13px; letter-spacing: 4px; opacity: 0.7; min-width: 60px; text-align: center;
+  }
+
   #timer {
-    position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
-    font-size: 11px; letter-spacing: 3px; z-index: 6;
+    position: fixed; top: 42px; left: 50%; transform: translateX(-50%);
+    font-size: 22px; letter-spacing: 4px; z-index: 6;
     pointer-events: none; opacity: 0; transition: opacity 0.3s;
   }
   #timer.show { opacity: 1; }
@@ -86,22 +170,49 @@
 <body>
 <canvas id="main-canvas"></canvas>
 <canvas id="overlay"></canvas>
-<div id="ui"><a href="https://tobyandzuzka.com" target="_blank" style="text-decoration:none; color:inherit;">tobyandzuzka.com</a></div>
+<div id="ui"><a href="https://tobyandzuzka.com" target="_blank" style="text-decoration:none; color:inherit;">WHERE&#39;S THE EXIT?</a></div>
 <canvas id="confetti-canvas"></canvas>
 
+<div id="splash" class="show">
+  <div id="splash-title">WHERE'S THE EXIT?</div>
+  <div id="splash-tagline">A 3D PIPE MAZE PUZZLE</div>
+  <div style="font-size:11px; letter-spacing:3px; opacity:0.35;">
+    <a href="https://tobyandzuzka.com" target="_blank" style="color:inherit; text-decoration:none;">tobyandzuzka.com</a>
+  </div>
+  <div id="splash-maze"><canvas id="splash-canvas"></canvas></div>
+  <div class="splash-text">Use the controller discs and tilt your device to guide your ball to the exit at the center of the maze.</div>
+  <button id="splash-btn">START PLAYING</button>
+</div>
+
+<button id="exit-btn">✕ QUIT</button>
+
+<div id="exit-confirm">
+  <div id="exit-confirm-msg">QUIT THIS LEVEL?</div>
+  <div id="exit-confirm-sub">YOUR PROGRESS WILL BE LOST</div>
+  <div id="exit-confirm-btns">
+    <button id="exit-yes">QUIT</button>
+    <button id="exit-no">KEEP PLAYING</button>
+  </div>
+</div>
+
 <div id="win">
-  <div id="win-msg">CENTER REACHED</div>
+  <div id="win-msg">EXIT FOUND</div>
   <div id="win-sub" style="font-size:14px;letter-spacing:2px;opacity:0.6;margin-top:4px"></div>
   <button id="win-btn" style="margin-top:16px">NEXT MAZE</button>
 </div>
 
 <div id="preview">
   <div id="preview-msg">LEVEL 1</div>
-  <div id="preview-sub">ORBIT TO PREVIEW · PRESS START WHEN READY</div>
+  <div id="preview-sub"></div>
+  <div id="preview-nav">
+    <button id="prev-level-btn">◀ PREV</button>
+    <div id="preview-level-label">1</div>
+    <button id="next-level-btn">NEXT ▶</button>
+  </div>
   <button id="preview-btn">START</button>
 </div>
 
-<div id="tilt-dbg" style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);font-family:monospace;font-size:11px;color:rgba(180,210,255,0.7);z-index:30;pointer-events:none;letter-spacing:1px"></div>
+<div id="tilt-dbg" style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);font-family:Arial,Helvetica,sans-serif;font-size:11px;color:rgba(180,210,255,0.7);z-index:30;pointer-events:none;letter-spacing:1px"></div>
 <div id="timer">00:00.0</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -236,7 +347,16 @@ function mulberry32(seed) {
 
 let currentSeed = 1 * 7919;
 let rng = mulberry32(currentSeed);
-let mazeLevel = 1;
+const bestTimes = JSON.parse(localStorage.getItem('pipemaze-besttimes') || '{}');
+// Highest level unlocked = highest completed + 1
+const MAX_LEVEL = 16;
+
+function highestUnlocked() {
+  const completed = Object.keys(bestTimes).map(Number).filter(n => !isNaN(n));
+  if (completed.length === 0) return 1;
+  return Math.min(Math.max(...completed) + 1, MAX_LEVEL);
+}
+let mazeLevel = Math.min(highestUnlocked(), MAX_LEVEL);
 let mazeR = 1;
 let mazeScheme = 'manhattan';
 let debugSeedOverride = false;
@@ -252,58 +372,35 @@ let timerRunning = false;
 // Manhattan distance progression: each entry is [R, count, fogEnabled, fogRadius]
 // Nodes at radius R = sum_{r=0}^{R} surface nodes = (2R²+1)*2R/3... easier to just count
 // R=1: 7, R=2: 25, R=3: 63, R=4: 129, R=5: 231
-const PROGRESSION = [
-  [1, 3, false, null],   // levels 1-3:   7 nodes
-  [2, 3, false, null],   // levels 4-6:   25 nodes
-  [3, 3, false, null],   // levels 7-9:   63 nodes
-  [4, 3, false, null],   // levels 10-12: 129 nodes
-  [5, 3, false, null],   // levels 13-15: 231 nodes
-  // Fog round
-  [2, 3, true,  3.5],
-  [3, 3, true,  3.5],
-  [4, 3, true,  3.0],
-  [5, 3, true,  2.5],
-];
-
-function getLevelConfig(level) {
-  let remaining = level;
-  for (const [r, count, fog, fogR] of PROGRESSION) {
-    if (remaining <= count) return { r, fog, fogR };
-    remaining -= count;
-  }
-  const last = PROGRESSION[PROGRESSION.length - 1];
-  return { r: last[0], fog: last[2], fogR: last[3] };
-}
-
 // ─── LEVELS MATRIX ─────────────────────────────────────────────────────────
-// Each entry: { seed, scheme, r, fog, fogR }
-// seed: deterministic seed (level * 7919 if not specified)
-// scheme: maze generation algorithm/shape
-// r: radius (overrides PROGRESSION if set)
-// fog: fog of war enabled
-// fogR: fog radius
 const LEVELS = [
-  // level 1
-  { scheme: 'manhattan', r: 1 },
-  // level 2
-  { scheme: 'manhattan', r: 1 },
-  // level 3
-  { scheme: 'manhattan', r: 1 },
-  // level 4
-  { scheme: 'backtracker', r: 2 },
-  // level 5
-  { scheme: 'manhattan', r: 2 },
+  { scheme: 'manhattan', r: 1,   seed: 7919,  fog: false },  //  1
+  { scheme: 'sphere',    r: 1.5, seed: 79817, fog: false },  //  2
+  { scheme: 'sphere',    r: 1.5, seed: 7919,  fog: false },  //  3
+  { scheme: 'cylinder',  r: 1,   seed: 77817, fog: false },  //  4
+  { scheme: 'cubic',     r: 1.5, seed: 94273, fog: false },  //  5
+  { scheme: 'manhattan', r: 3,   seed: 45414, fog: false },  //  6
+  { scheme: 'sphere',    r: 2.5, seed: 11798, fog: false },  //  7
+  { scheme: 'cylinder',  r: 2.5, seed: 84377, fog: false },  //  8
+  { scheme: 'cubic',     r: 2,   seed: 10216, fog: false },  //  9
+  { scheme: 'backtracker',r: 3,  seed: 85377, fog: true  },  // 10
+  { scheme: 'layered',   r: 2.5, seed: 94535, fog: true  },  // 11
+  { scheme: 'cylinder',  r: 2.5, seed: 94296, fog: true  },  // 12
+  { scheme: 'cylinder',  r: 2.5, seed: 6521,  fog: false },  // 13
+  { scheme: 'cubic',     r: 2.5, seed: 2934,  fog: false },  // 14
+  { scheme: 'sphere',    r: 3.5, seed: 55314, fog: false },  // 15
+  { scheme: 'cubic',     r: 3,   seed: 90044, fog: false },  // 16
 ];
 
 function getLevel(level) {
-  const entry = LEVELS[level - 1];
-  const progression = getLevelConfig(level);
+  const i = Math.min(level, MAX_LEVEL) - 1;
+  const entry = LEVELS[i];
   return {
-    seed:   entry?.seed  ?? level * 7919,
-    scheme: entry?.scheme ?? 'manhattan',
-    r:      entry?.r     ?? progression.r,
-    fog:    entry?.fog   ?? progression.fog,
-    fogR:   entry?.fogR  ?? progression.fogR,
+    seed:   entry.seed,
+    scheme: entry.scheme,
+    r:      entry.r,
+    fog:    entry.fog,
+    fogR:   null,
   };
 }
 
@@ -623,9 +720,6 @@ function screenDownGravity() {
 }
 
 function onOrientationEvent(e) {
-  const dbg = document.getElementById('tilt-dbg');
-  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `β${e.beta?.toFixed(1)} γ${e.gamma?.toFixed(1)} lc:${levelComplete}`; }
-
   if (!tiltEnabled || winAnimating || inPreview || levelComplete) return;
   if (e.beta === null || e.gamma === null) return;
 
@@ -742,6 +836,7 @@ function arriveAt(node, cameFrom) {
       winSub.style.fontSize = '';
       winSub.style.color = '';
       winSub.textContent = `TIME: ${fmtTime(totalMs)}`;
+      document.getElementById('exit-btn').classList.remove('show');
       document.getElementById('win').classList.add('show');
 
       if (isRecord) {
@@ -985,56 +1080,6 @@ mainCanvas.addEventListener('touchmove', e => {
 let invertY = localStorage.getItem('pipemaze-invertY') === '1';
 
 // ─── MODE SELECTOR UI ──────────────────────────────────────────────────────
-(function buildModeUI() {
-  const wrap = document.createElement('div');
-  wrap.id = 'mode-wrap';
-  wrap.style.cssText = `
-    position:fixed; top:16px; left:50%; transform:translateX(-50%);
-    display:flex; gap:0; z-index:10; pointer-events:auto;
-    border-radius:4px; overflow:hidden;
-  `;
-
-  const modes = [
-    { id:'invertY', label:'INVERT Y', action: () => { invertY = !invertY; localStorage.setItem('pipemaze-invertY', invertY ? '1' : '0'); }, toggle: () => invertY },
-  ];
-
-  function refreshStyles() {
-    const bg  = isDark ? 'rgba(10,15,24,0.9)'    : 'rgba(221,228,236,0.9)';
-    const c   = isDark ? 'rgba(180,210,255,0.4)'  : 'rgba(10,26,58,0.4)';
-    const cOn = isDark ? 'rgba(180,210,255,1)'    : 'rgba(10,26,58,1)';
-    const bc  = isDark ? 'rgba(180,210,255,0.2)'  : 'rgba(10,26,58,0.2)';
-    wrap.style.border = `1px solid ${bc}`;
-    wrap.querySelectorAll('button').forEach(b => {
-      const active = modes.find(m => m.id === b.dataset.id)?.toggle();
-      b.style.background  = active ? (isDark ? 'rgba(180,210,255,0.15)' : 'rgba(10,26,58,0.12)') : bg;
-      b.style.color       = active ? cOn : c;
-      b.style.borderRight = `1px solid ${bc}`;
-    });
-    wrap.lastChild.style.borderRight = 'none';
-  }
-  window._refreshModeUI = refreshStyles;
-
-  modes.forEach(m => {
-    const btn = document.createElement('button');
-    btn.textContent = m.label;
-    btn.dataset.id  = m.id;
-    btn.style.cssText = `
-      font:10px 'Courier New',monospace; letter-spacing:2px;
-      padding:6px 14px; border:none; cursor:pointer;
-      transition:background 0.15s,color 0.15s;
-    `;
-    btn.addEventListener('click', () => {
-      if (m.action) { m.action(); }
-      else { rotMode = m.id; }
-      refreshStyles();
-    });
-    wrap.appendChild(btn);
-  });
-
-  document.body.appendChild(wrap);
-  refreshStyles();
-})();
-
 // ─── SEED UI ───────────────────────────────────────────────────────────────
 
 
@@ -1073,6 +1118,7 @@ function clearPathHighlight() {
 }
 
 (function buildDebugUI() {
+  let seedInput; // forward declaration — assigned below
   const wrap = document.createElement('div');
   wrap.style.cssText = `
     position:fixed; top:120px; left:16px; z-index:10;
@@ -1094,7 +1140,7 @@ function clearPathHighlight() {
     const b = document.createElement('button');
     b.textContent = label;
     b.style.cssText = `
-      font:10px 'Courier New',monospace; letter-spacing:2px;
+      font:10px Arial, Helvetica, sans-serif; letter-spacing:2px;
       padding:6px 12px; border:none; cursor:pointer;
       background:${bg}; color:${c};
       transition:background 0.15s,color 0.15s;
@@ -1122,7 +1168,7 @@ function clearPathHighlight() {
 
   function makeLbl(text) {
     const d = document.createElement('div');
-    d.style.cssText = `font:10px 'Courier New',monospace; letter-spacing:2px; padding:6px 10px; background:${bg}; color:${c};`;
+    d.style.cssText = `font:10px Arial, Helvetica, sans-serif; letter-spacing:2px; padding:6px 10px; background:${bg}; color:${c};`;
     d.textContent = text;
     return d;
   }
@@ -1155,13 +1201,13 @@ function clearPathHighlight() {
     debugSeedOverride = false;
     debugR = null;
     currentSeed = getLevel(mazeLevel).seed;
-    seedVal.textContent = currentSeed;
+    seedInput.value = currentSeed;
     rVal.textContent = levelToR(mazeLevel);
     rebuildMaze();
   }
 
   prevBtn.addEventListener('click', () => { if (mazeLevel > 1) { mazeLevel--; rebuild(); } });
-  nextBtn.addEventListener('click', () => { mazeLevel++; rebuild(); });
+  nextBtn.addEventListener('click', () => { if (mazeLevel < MAX_LEVEL) { mazeLevel++; rebuild(); } });
 
   levelRow.appendChild(prevBtn);
   levelRow.appendChild(levelLbl);
@@ -1174,7 +1220,7 @@ function clearPathHighlight() {
   const schemes = ['cubic','manhattan','sphere','cylinder','layered','prim','backtracker'];
   const select = document.createElement('select');
   select.style.cssText = `
-    font:10px 'Courier New',monospace; letter-spacing:2px;
+    font:10px Arial, Helvetica, sans-serif; letter-spacing:2px;
     padding:6px 10px; border:none; cursor:pointer;
     background:${bg}; color:${cOn}; outline:none; flex:1;
   `;
@@ -1217,18 +1263,31 @@ function clearPathHighlight() {
   const seedRow = makeRow();
   const seedLbl = makeLbl('SEED');
   seedLbl.style.borderRight = `1px solid ${bc}`;
-  const seedVal = makeLbl(currentSeed);
-  seedVal.style.cssText += `flex:1; text-align:center; color:${cOn};`;
-  const randBtn = makeBtn('RANDOM');
+  seedInput = document.createElement('input');
+  seedInput.type = 'number';
+  seedInput.value = currentSeed;
+  seedInput.style.cssText = `flex:1; text-align:center; background:transparent; border:none;
+    color:${cOn}; font:10px Arial,Helvetica,sans-serif; letter-spacing:2px; outline:none;
+    padding:4px 8px; min-width:0; -moz-appearance:textfield;`;
+  seedInput.addEventListener('change', () => {
+    const v = parseInt(seedInput.value);
+    if (!isNaN(v) && v > 0) {
+      debugSeedOverride = true;
+      currentSeed = v;
+      rebuildMaze(true);
+    }
+  });
+  seedInput.addEventListener('keydown', e => { if (e.key === 'Enter') seedInput.blur(); });
+  const randBtn = makeBtn('RND');
   randBtn.style.borderLeft = `1px solid ${bc}`;
   randBtn.addEventListener('click', () => {
     debugSeedOverride = true;
     currentSeed = Math.floor(Math.random() * 99999) + 1;
-    seedVal.textContent = currentSeed;
+    seedInput.value = currentSeed;
     rebuildMaze(true);
   });
   seedRow.appendChild(seedLbl);
-  seedRow.appendChild(seedVal);
+  seedRow.appendChild(seedInput);
   seedRow.appendChild(randBtn);
 
   // ── Path highlight button ──
@@ -1280,8 +1339,6 @@ function clearPathHighlight() {
 
 
 // ─── BEST TIMES ────────────────────────────────────────────────────────────
-const bestTimes = JSON.parse(localStorage.getItem('pipemaze-besttimes') || '{}');
-
 function saveBestTime(level, ms) {
   if (!bestTimes[level] || ms < bestTimes[level]) {
     bestTimes[level] = ms;
@@ -1314,148 +1371,6 @@ function drawOverlay() {
   octx.clearRect(0, 0, W, H);
 }
 
-// ─── INTERACTIVE AXIS WIDGET ───────────────────────────────────────────────
-const AX_SIZE = 100;
-const axisWidget = document.createElement('canvas');
-axisWidget.style.cssText = `position:fixed; top:10px; right:10px; width:${AX_SIZE}px; height:${AX_SIZE}px; z-index:6; cursor:crosshair; touch-action:none;`;
-axisWidget.width  = AX_SIZE;
-axisWidget.height = AX_SIZE;
-document.body.appendChild(axisWidget);
-
-const AXES = [
-  { name: 'X', dir: new THREE.Vector3(1, 0, 0), color: '#ee2222' },
-  { name: 'Y', dir: new THREE.Vector3(0, 1, 0), color: '#22bb22' },
-  { name: 'Z', dir: new THREE.Vector3(0, 0, 1), color: '#2266ee' },
-];
-
-let axDrag = null; // { axis, lx, ly }
-
-function axisTipScreen(dir) {
-  const v = dir.clone().applyQuaternion(mazeGroup.quaternion).project(axesCam);
-  return { x: (v.x * 0.5 + 0.5) * AX_SIZE, y: (-v.y * 0.5 + 0.5) * AX_SIZE };
-}
-
-function nearestAxis(px, py) {
-  let best = null, bestD = 18; // px hit radius
-  const origin = { x: AX_SIZE / 2, y: AX_SIZE / 2 };
-  for (const ax of AXES) {
-    const tip = axisTipScreen(ax.dir);
-    // Distance from point to line segment origin→tip
-    const dx = tip.x - origin.x, dy = tip.y - origin.y;
-    const len2 = dx * dx + dy * dy;
-    const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - origin.x) * dx + (py - origin.y) * dy) / len2)) : 0;
-    const cx = origin.x + t * dx - px, cy = origin.y + t * dy - py;
-    const d = Math.sqrt(cx * cx + cy * cy);
-    if (d < bestD) { bestD = d; best = ax; }
-  }
-  return best;
-}
-
-function rotateMazeAroundAxis(worldAxis, angle) {
-  if (!maze || levelComplete || winAnimating) return;
-  const q = new THREE.Quaternion().setFromAxisAngle(worldAxis, angle);
-  mazeGroup.quaternion.premultiply(q);
-  ball.stopped = false;
-}
-
-axisWidget.addEventListener('pointerdown', e => {
-  if (inPreview || levelComplete || winAnimating) return;
-  const ax = nearestAxis(e.offsetX, e.offsetY);
-  if (!ax) return;
-  axDrag = { axis: ax, lx: e.clientX, ly: e.clientY };
-  axisWidget.setPointerCapture(e.pointerId);
-  e.stopPropagation();
-});
-
-axisWidget.addEventListener('pointermove', e => {
-  if (!axDrag) return;
-  const dx = e.clientX - axDrag.lx;
-  const dy = e.clientY - axDrag.ly;
-  axDrag.lx = e.clientX;
-  axDrag.ly = e.clientY;
-  // Map drag delta to rotation — project axis to screen to get dominant drag direction
-  // Use the maze-local axis direction transformed to world space
-  const worldAxis = axDrag.axis.dir.clone().applyQuaternion(mazeGroup.quaternion).normalize();
-  const angle = (dx - dy) * 0.012;
-  rotateMazeAroundAxis(worldAxis, angle);
-  e.stopPropagation();
-});
-
-axisWidget.addEventListener('pointerup', e => { axDrag = null; });
-axisWidget.addEventListener('pointercancel', e => { axDrag = null; });
-// Highlight hovered axis
-axisWidget.addEventListener('pointermove', e => {
-  if (axDrag) return;
-  axisWidget.style.cursor = nearestAxis(e.offsetX, e.offsetY) ? 'grab' : 'default';
-});
-
-function drawAxisWidget() {
-  const ctx = axisWidget.getContext('2d');
-  const W = AX_SIZE, H = AX_SIZE;
-  ctx.clearRect(0, 0, W, H);
-
-  ctx.fillStyle = isDark ? 'rgba(10,15,24,0.65)' : 'rgba(221,228,236,0.65)';
-  ctx.fillRect(0, 0, W, H);
-
-  const origin = { x: W / 2, y: H / 2 };
-
-  function tip(dir) {
-    const v = dir.clone().applyQuaternion(mazeGroup.quaternion).project(axesCam);
-    return { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H };
-  }
-
-  for (const ax of AXES) {
-    const t = tip(ax.dir);
-    const active = axDrag?.axis === ax;
-    ctx.strokeStyle = ax.color;
-    ctx.lineWidth = active ? 3 : 1.5;
-    ctx.globalAlpha = active ? 1.0 : 0.8;
-    ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(t.x, t.y);
-    ctx.stroke();
-    ctx.fillStyle = ax.color;
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, active ? 5 : 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.font = `bold ${active ? 13 : 11}px Courier New`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
-    ctx.fillText(ax.name, t.x + 1, t.y + 9);
-    ctx.fillStyle = ax.color;
-    ctx.fillText(ax.name, t.x, t.y + 8);
-  }
-
-  // Gravity arrow
-  function worldTip(wx, wy, wz) {
-    const v = new THREE.Vector3(wx, wy, wz).project(axesCam);
-    return { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H };
-  }
-  const gO = worldTip(0, 0, 0);
-  const gT = worldTip(0, -1.1, 0);
-  const gColor = isDark ? 'rgba(255,160,60,0.9)' : 'rgba(200,90,0,0.9)';
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = gColor;
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(gO.x, gO.y); ctx.lineTo(gT.x, gT.y); ctx.stroke();
-  const ga = Math.atan2(gT.y - gO.y, gT.x - gO.x);
-  ctx.fillStyle = gColor;
-  ctx.beginPath();
-  ctx.moveTo(gT.x, gT.y);
-  ctx.lineTo(gT.x - 7 * Math.cos(ga - 0.4), gT.y - 7 * Math.sin(ga - 0.4));
-  ctx.lineTo(gT.x - 7 * Math.cos(ga + 0.4), gT.y - 7 * Math.sin(ga + 0.4));
-  ctx.closePath(); ctx.fill();
-  ctx.font = 'bold 10px Courier New';
-  ctx.textAlign = 'left';
-  ctx.fillText('G', gT.x + 5, gT.y);
-
-  ctx.strokeStyle = isDark ? 'rgba(180,210,255,0.25)' : 'rgba(10,26,58,0.25)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0, 0, W, H);
-}
-
 window.addEventListener('resize', () => {
   aspect = window.innerWidth / window.innerHeight;
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1468,6 +1383,13 @@ window.addEventListener('resize', () => {
 });
 
 // ─── YAW / PITCH DISC CONTROLS ─────────────────────────────────────────────
+function rotateMazeAroundAxis(worldAxis, angle) {
+  if (!maze || levelComplete || winAnimating) return;
+  const q = new THREE.Quaternion().setFromAxisAngle(worldAxis, angle);
+  mazeGroup.quaternion.premultiply(q);
+  ball.stopped = false;
+}
+
 (function buildDiscControls() {
   const isTouch = navigator.maxTouchPoints > 0;
   const S = isTouch ? 160 : 80;
@@ -1542,7 +1464,7 @@ window.addEventListener('resize', () => {
       }
 
       // Label
-      ctx.font = 'bold 10px Courier New';
+      ctx.font = 'bold 10px Arial';
       ctx.fillStyle = `rgba(180,210,255,${isActive ? 1.0 : 0.5})`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -1712,24 +1634,27 @@ function animate() {
   renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
   renderer.render(scene, camera);
 
-  // Axes inset — top-right 100×100px
-  axesGroup.quaternion.copy(mazeGroup.quaternion);
-  const AX = 100, AXX = window.innerWidth - AX - 10, AXY = window.innerHeight - AX - 10;
-  renderer.autoClear = false;
-  renderer.clearDepth();
-  renderer.setScissorTest(true);
-  renderer.setScissor(AXX, AXY, AX, AX);
-  renderer.setViewport(AXX, AXY, AX, AX);
-  renderer.render(axesScene, axesCam);
-  renderer.setScissorTest(false);
-  renderer.autoClear = true;
-
-  drawAxisWidget();
 }
 
 // ─── START ─────────────────────────────────────────────────────────────────
 function nextLevel() {
   winPlayed = false;
+  if (mazeLevel >= MAX_LEVEL) {
+    // All levels complete — stay on win screen, change message
+    document.getElementById('win-msg').textContent = 'ALL LEVELS COMPLETE!';
+    document.getElementById('win-sub').textContent = 'YOU FINISHED THE GAME';
+    document.getElementById('win-btn').textContent = 'REPLAY FROM LEVEL 1';
+    document.getElementById('win-btn').onclick = () => {
+      mazeLevel = 1;
+      document.getElementById('win').classList.remove('show');
+      document.getElementById('win-btn').textContent = 'NEXT MAZE';
+      document.getElementById('win-btn').onclick = null;
+      mazeGroup.quaternion.set(0,0,0,1);
+      mazeGroup.position.set(0,0,0);
+      applyLevelConfig(); buildGeometry(); initBall(); showPreview();
+    };
+    return;
+  }
   mazeLevel++;
   debugSeedOverride = false;
   currentSeed = getLevel(mazeLevel).seed;
@@ -1757,7 +1682,8 @@ function showPreview() {
   inPreview = true;
   timerRunning = false;
   timerElapsed = 0;
-  const cfg = getLevelConfig(mazeLevel);
+  document.getElementById('exit-btn').classList.remove('show');
+  const cfg = getLevel(mazeLevel);
   const r = levelToR(mazeLevel);
   document.getElementById('preview-msg').textContent = `LEVEL ${mazeLevel}`;
   const best = bestTimes[mazeLevel];
@@ -1765,6 +1691,11 @@ function showPreview() {
   const sizeStr = `${mazeScheme.toUpperCase()} R=${r} · DIFFICULTY ${pathLen}${cfg.fog ? ` · FOG` : ''}`;
   document.getElementById('preview-sub').textContent =
     sizeStr + (best ? ` · BEST: ${fmtTime(best)}` : '');
+  // Nav buttons
+  const unlocked = highestUnlocked();
+  document.getElementById('preview-level-label').textContent = `${mazeLevel}`;
+  document.getElementById('prev-level-btn').disabled = mazeLevel <= 1;
+  document.getElementById('next-level-btn').disabled = mazeLevel >= unlocked;
   document.getElementById('preview').classList.add('show');
   document.getElementById('timer').classList.remove('show');
   document.getElementById('timer').textContent = '00:00.0';
@@ -1778,6 +1709,7 @@ function startLevel() {
   inPreview = false;
   document.getElementById('preview').classList.remove('show');
   document.getElementById('timer').classList.add('show');
+  document.getElementById('exit-btn').classList.add('show');
   // Reset maze orientation and camera so gravity feels natural
   mazeGroup.quaternion.set(0, 0, 0, 1);
   camDir.set(1, 1, 1).normalize();
@@ -1795,6 +1727,43 @@ function stopTimer() {
 }
 
 document.getElementById('preview-btn').addEventListener('click', startLevel);
+document.getElementById('exit-btn').addEventListener('click', () => {
+  document.getElementById('exit-confirm').classList.add('show');
+});
+document.getElementById('exit-no').addEventListener('click', () => {
+  document.getElementById('exit-confirm').classList.remove('show');
+});
+document.getElementById('exit-yes').addEventListener('click', () => {
+  document.getElementById('exit-confirm').classList.remove('show');
+  // Abandon level — return to preview
+  timerRunning = false;
+  timerElapsed = 0;
+  levelComplete = false;
+  winAnimating = false;
+  document.getElementById('win').classList.remove('show');
+  mazeGroup.quaternion.set(0,0,0,1);
+  mazeGroup.position.set(0,0,0);
+  buildGeometry(); initBall(); showPreview();
+});
+document.getElementById('prev-level-btn').addEventListener('click', () => {
+  if (mazeLevel <= 1) return;
+  mazeLevel--;
+  mazeGroup.quaternion.set(0,0,0,1);
+  mazeGroup.position.set(0,0,0);
+  currentSeed = getLevel(mazeLevel).seed;
+  applyLevelConfig(); buildGeometry(); initBall(); showPreview();
+});
+document.getElementById('next-level-btn').addEventListener('click', () => {
+  if (mazeLevel >= highestUnlocked()) return;
+  mazeLevel++;
+  mazeGroup.quaternion.set(0,0,0,1);
+  mazeGroup.position.set(0,0,0);
+  currentSeed = getLevel(mazeLevel).seed;
+  applyLevelConfig(); buildGeometry(); initBall(); showPreview();
+});
+document.getElementById('splash-btn').addEventListener('click', () => {
+  document.getElementById('splash').classList.remove('show');
+});
 
 // Style preview overlay to match theme
 function applyPreviewTheme() {
@@ -2093,6 +2062,165 @@ applyLevelConfig();
 applyTheme();
 showPreview();
 animate();
+
+// ─── SPLASH MAZE PREVIEW ───────────────────────────────────────────────────
+(function initSplashMaze() {
+  const savedLevel = mazeLevel, savedScheme = mazeScheme, savedR = mazeR;
+  const savedSeed = currentSeed, savedDebugR = debugR, savedDebugSeed = debugSeedOverride;
+  const savedQuat = mazeGroup.quaternion.clone();
+  const savedPos  = mazeGroup.position.clone();
+
+  // Build splash maze into mazeGroup using real pipeline
+  mazeScheme = 'cubic'; mazeR = 1;
+  currentSeed = 74302; debugSeedOverride = true; debugR = 1;
+  rng = mulberry32(currentSeed);
+  while (mazeGroup.children.length) mazeGroup.remove(mazeGroup.children[0]);
+  maze = buildMaze();
+  for (const e of maze.edges) {
+    const curve = new THREE.LineCurve3(e.a.pos, e.b.pos);
+    const geo = new THREE.TubeGeometry(curve, 1, PIPE_R, 12, false);
+    const m = new THREE.Mesh(geo, pipeMat.clone());
+    m.userData.midpoint = new THREE.Vector3().addVectors(e.a.pos, e.b.pos).multiplyScalar(0.5);
+    m.userData.matType = 'pipe';
+    mazeGroup.add(m);
+  }
+  for (const n of maze.nodes) {
+    if (n.edges.length >= 2 && !n.isCenter && !n.isStart) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(PIPE_R * 1.01, 14, 10), pipeMat.clone());
+      m.position.copy(n.pos); m.userData.midpoint = n.pos; m.userData.matType = 'pipe';
+      mazeGroup.add(m);
+    }
+    if (n.isLeaf && !n.isStart && !n.isCenter) {
+      const nbr = n.edges[0]; const nb = nbr.a === n ? nbr.b : nbr.a;
+      const dir = new THREE.Vector3().subVectors(n.pos, nb.pos).normalize();
+      const m = new THREE.Mesh(new THREE.CircleGeometry(PIPE_R, 12), junctionMat.clone());
+      m.position.copy(n.pos); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), dir);
+      m.userData.midpoint = n.pos; m.userData.matType = 'junction';
+      mazeGroup.add(m);
+    }
+    if (n.isCenter) {
+      const m = new THREE.Mesh(centerGeo, centerMat.clone());
+      m.position.copy(n.pos); m.userData.midpoint = n.pos; m.userData.matType = 'center';
+      mazeGroup.add(m);
+    }
+    if (n.isStart) {
+      const m = new THREE.Mesh(startGeo, startMat.clone());
+      m.position.copy(n.pos); m.userData.midpoint = n.pos; m.userData.matType = 'start';
+      mazeGroup.add(m);
+    }
+  }
+  applyTheme();
+  mazeGroup.quaternion.set(0,0,0,1);
+  mazeGroup.position.set(0,0,0);
+
+  let maxDist = 0;
+  maze.nodes.forEach(n => { maxDist = Math.max(maxDist, n.pos.length()); });
+
+  // Save/restore camera frustum
+  const savedCL = camera.left, savedCR = camera.right, savedCT = camera.top, savedCB = camera.bottom;
+  const savedCamPos = camera.position.clone(), savedCamUp = camera.up.clone();
+
+  function setSplashCamera(W, H) {
+    const asp = W / H;
+    const vd = maxDist * 1.5;
+    camera.left = -vd * asp; camera.right = vd * asp;
+    camera.top = vd; camera.bottom = -vd;
+    camera.updateProjectionMatrix();
+    const d = maxDist * 5;
+    camera.position.set(d * 0.7, d * 0.55, d * 0.7);
+    camera.up.set(0, 1, 0);
+    // Shift lookAt so maze appears centered: offset right and up in world space
+    // (panel offset ~1/4 width left = shift target right, 1/4 down = shift target up)
+    const offset = new THREE.Vector3(vd * asp * 0.5 - PIPE_R, vd * 0.5, 0);
+    camera.lookAt(offset);
+  }
+
+  function applyDepthShading() {
+    const t = THEMES.dark;
+    for (const child of mazeGroup.children) {
+      if (!child.material || !child.userData.midpoint) continue;
+      const mp = child.userData.midpoint.clone();
+      mazeGroup.localToWorld(mp);
+      const d = camera.position.distanceTo(mp);
+      const f = Math.max(0, Math.min(1, 1 - (d - maxDist) / (maxDist * 5)));
+      const base = new THREE.Color(t[child.userData.matType] ?? t.pipe);
+      child.material.color.setRGB(base.r * (0.25 + 0.75 * f), base.g * (0.25 + 0.75 * f), base.b * (0.25 + 0.75 * f));
+    }
+  }
+
+  let splashAngle = 0.5, target = null, splashRunning = true;
+
+  function splashFrame() {
+    if (!splashRunning) return;
+    requestAnimationFrame(splashFrame);
+    if (!document.getElementById('splash').classList.contains('show')) return;
+
+    const container = document.getElementById('splash-maze');
+    const W = container.offsetWidth, H = container.offsetHeight;
+    if (!W || !H) return;
+
+    const pr = Math.min(window.devicePixelRatio, 2);
+    const tw = Math.floor(W * pr), th = Math.floor(H * pr);
+
+    if (!target || target.width !== tw || target.height !== th) {
+      if (target) target.dispose();
+      target = new THREE.WebGLRenderTarget(tw, th);
+    }
+
+    splashAngle += 0.004;
+    mazeGroup.rotation.y = splashAngle;
+    // Keep exit (center node) at world origin so it's centered in the panel
+    mazeGroup.updateMatrixWorld();
+    if (maze && maze.center) {
+      const ew = maze.center.pos.clone().applyMatrix4(mazeGroup.matrixWorld);
+      mazeGroup.position.sub(ew);
+    }
+    setSplashCamera(W, H);
+    applyDepthShading();
+
+    renderer.setRenderTarget(target);
+    renderer.setViewport(0, 0, tw, th);
+    renderer.setScissorTest(false);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+
+    // Copy pixels to splash canvas
+    const pixels = new Uint8Array(tw * th * 4);
+    renderer.readRenderTargetPixels(target, 0, 0, tw, th, pixels);
+    const cvs = document.getElementById('splash-canvas');
+    if (!cvs) return;
+    cvs.width = tw; cvs.height = th;
+    cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+    const ctx = cvs.getContext('2d');
+    const imgData = ctx.createImageData(tw, th);
+    // Flip Y (WebGL origin is bottom-left, canvas is top-left)
+    for (let y = 0; y < th; y++) {
+      const src = (th - 1 - y) * tw * 4;
+      imgData.data.set(pixels.subarray(src, src + tw * 4), y * tw * 4);
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  setTimeout(splashFrame, 50);
+
+  function restoreGame() {
+    splashRunning = false;
+    if (target) { target.dispose(); target = null; }
+    mazeLevel = savedLevel; mazeScheme = savedScheme; mazeR = savedR;
+    currentSeed = savedSeed; debugSeedOverride = savedDebugSeed; debugR = savedDebugR;
+    camera.left = savedCL; camera.right = savedCR;
+    camera.top = savedCT; camera.bottom = savedCB;
+    camera.position.copy(savedCamPos); camera.up.copy(savedCamUp);
+    camera.updateProjectionMatrix();
+    mazeGroup.rotation.y = 0;
+    mazeGroup.quaternion.copy(savedQuat);
+    mazeGroup.position.copy(savedPos);
+    buildGeometry(); initBall(); showPreview();
+  }
+
+  document.getElementById('splash-btn').addEventListener('click', restoreGame, { once: true });
+})();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');
