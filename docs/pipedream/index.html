@@ -738,10 +738,18 @@ function arriveAt(node, cameFrom) {
       document.getElementById('win').classList.add('show');
 
       if (isRecord) {
+        const winBtn = document.getElementById('win-btn');
+        winBtn.disabled = true;
+        winBtn.style.visibility = 'hidden';
         setTimeout(() => {
           playRecordStab();
           launchConfetti();
           animateNewBest(winSub, `🏆 TIME: ${fmtTime(totalMs)} 🏆`);
+          // Re-show button after stab sound + text animation (~1.5s)
+          setTimeout(() => {
+            winBtn.disabled = false;
+            winBtn.style.visibility = 'visible';
+          }, 2000);
         }, 1000);
       }
     });
@@ -966,13 +974,17 @@ mainCanvas.addEventListener('touchmove', e => {
     const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
     const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     orbitMove(cx, cy);
-    // Pinch zoom
+    // Pinch zoom — same as scroll wheel, updates orthographic VIEW
     if (pinchDist0 !== null) {
       const dist = touchDist(e);
-      const scale = pinchDist0 / dist;
-      CAM_DIST = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, CAM_DIST * scale));
+      const scale = pinchDist0 / dist; // pinch in = dist decreases = scale > 1 = zoom out
+      VIEW = Math.max(3, Math.min(24, VIEW * scale));
+      camera.left   = -VIEW * aspect;
+      camera.right  =  VIEW * aspect;
+      camera.top    =  VIEW;
+      camera.bottom = -VIEW;
+      camera.updateProjectionMatrix();
       pinchDist0 = dist;
-      updateCameraPosition();
     }
   } else {
     dragMove(e.touches[0].clientX, e.touches[0].clientY);
@@ -1786,7 +1798,7 @@ function launchConfetti() {
   function step() {
     confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
     confettiParticles.forEach(p => {
-      p.x += p.vx; p.y += p.vy; p.vy += 0.35; p.vx *= 0.99; p.angle += p.spin;
+      p.x += p.vx; p.y += p.vy; p.vy += 0.6; p.vx *= 0.99; p.angle += p.spin;
       confettiCtx.save();
       confettiCtx.translate(p.x, p.y);
       confettiCtx.rotate(p.angle);
