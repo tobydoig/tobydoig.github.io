@@ -842,11 +842,7 @@ function rotateMaze(dx, dy) {
 }
 
 function dragMove(x, y) {
-  if (!drag.on || winAnimating || levelComplete) return;
-  ball.stopped = false;
-  const dx = x - drag.lx, dy = y - drag.ly;
-  drag.lx = x; drag.ly = y;
-  if (dx !== 0 || dy !== 0) rotateMaze(dx, dy);
+  // Rotation now handled by disc controls and tilt only
 }
 
 const orbitReturn = { active: false, t: 0, fromDir: new THREE.Vector3(), fromUp: new THREE.Vector3(), toDir: new THREE.Vector3(), toUp: new THREE.Vector3(), fromVIEW: 9, toVIEW: 9, fromQuat: new THREE.Quaternion(), toQuat: new THREE.Quaternion() };
@@ -905,19 +901,10 @@ function orbitMove(x, y) {
   updateCameraPosition();
 }
 
-mainCanvas.addEventListener('mousedown',  e => {
-  if (e.button === 2) orbitStart(e.clientX, e.clientY);
-  else dragStart(e.clientX, e.clientY);
-});
-window.addEventListener('mouseup', e => {
-  if (e.button === 2) { if (orbit.on) orbitEnd(); }
-  else dragEnd();
-});
-mainCanvas.addEventListener('mousemove', e => {
-  orbitMove(e.clientX, e.clientY);
-  dragMove(e.clientX, e.clientY);
-});
-mainCanvas.addEventListener('contextmenu', e => e.preventDefault());
+mainCanvas.addEventListener('mousedown',  e => { dragStart(e.clientX, e.clientY); });
+window.addEventListener('mouseup', e => { dragEnd(); });
+mainCanvas.addEventListener('mousemove', e => { dragMove(e.clientX, e.clientY); });
+window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ─── KEY CONTROLS ──────────────────────────────────────────────────────────
 const keysDown = new Set();
@@ -928,18 +915,10 @@ function applyKeyRotation() {
   const rolling = keysDown.has('q') || keysDown.has('e');
   if (!rolling || winAnimating || levelComplete) return;
   ball.stopped = false;
-  const s = 0.05;
   const dir = camDir.clone().normalize();
-  if (keysDown.has('q')) {
-    mazeGroup.quaternion.premultiply(
-      new THREE.Quaternion().setFromAxisAngle(dir,  s));
-  }
-  if (keysDown.has('e')) {
-    mazeGroup.quaternion.premultiply(
-      new THREE.Quaternion().setFromAxisAngle(dir, -s));
-  }
+  if (keysDown.has('q')) mazeGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(dir,  0.05));
+  if (keysDown.has('e')) mazeGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(dir, -0.05));
 }
-window.addEventListener('contextmenu', e => e.preventDefault());
 let pinchDist0 = null;
 
 function touchDist(e) {
@@ -951,47 +930,27 @@ function touchDist(e) {
 mainCanvas.addEventListener('touchstart', e => {
   e.preventDefault();
   if (e.touches.length === 2) {
-    dragEnd();
-    const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    orbitStart(cx, cy);
     pinchDist0 = touchDist(e);
-  } else {
-    orbitEnd();
-    pinchDist0 = null;
-    dragStart(e.touches[0].clientX, e.touches[0].clientY);
   }
 }, {passive:false});
 
 window.addEventListener('touchend', e => {
-  if (e.touches.length === 0) {
-    dragEnd();
-    if (orbit.on) orbitEnd();
-    pinchDist0 = null;
-  }
+  if (e.touches.length === 0) { pinchDist0 = null; }
   if (e.touches.length === 1) { pinchDist0 = null; }
 });
 
 mainCanvas.addEventListener('touchmove', e => {
   e.preventDefault();
-  if (e.touches.length === 2) {
-    const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    orbitMove(cx, cy);
-    // Pinch zoom — same as scroll wheel, updates orthographic VIEW
-    if (pinchDist0 !== null) {
-      const dist = touchDist(e);
-      const scale = pinchDist0 / dist; // pinch in = dist decreases = scale > 1 = zoom out
-      VIEW = Math.max(3, Math.min(24, VIEW * scale));
-      camera.left   = -VIEW * aspect;
-      camera.right  =  VIEW * aspect;
-      camera.top    =  VIEW;
-      camera.bottom = -VIEW;
-      camera.updateProjectionMatrix();
-      pinchDist0 = dist;
-    }
-  } else {
-    dragMove(e.touches[0].clientX, e.touches[0].clientY);
+  if (e.touches.length === 2 && pinchDist0 !== null) {
+    const dist = touchDist(e);
+    const scale = pinchDist0 / dist;
+    VIEW = Math.max(3, Math.min(24, VIEW * scale));
+    camera.left   = -VIEW * aspect;
+    camera.right  =  VIEW * aspect;
+    camera.top    =  VIEW;
+    camera.bottom = -VIEW;
+    camera.updateProjectionMatrix();
+    pinchDist0 = dist;
   }
 }, {passive:false});
 
@@ -1482,7 +1441,8 @@ window.addEventListener('resize', () => {
 
 // ─── YAW / PITCH DISC CONTROLS ─────────────────────────────────────────────
 (function buildDiscControls() {
-  const S = 80; // disc diameter px
+  const isTouch = navigator.maxTouchPoints > 0;
+  const S = isTouch ? 160 : 80;
 
   function makeDisc({ side, label, hint, cursor, onDrag }) {
     const cvs = document.createElement('canvas');
