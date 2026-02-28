@@ -832,7 +832,7 @@ function dragEnd() { drag.on = false; }
 
 function rotateMaze(dx, dy) {
   const s = 0.006;
-  if (!maze) return;
+  if (!maze || levelComplete || winAnimating) return;
   const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
   const qH = dx !== 0 ? new THREE.Quaternion().setFromAxisAngle(camUp,    dx * s) : null;
   const qV = dy !== 0 ? new THREE.Quaternion().setFromAxisAngle(camRight, dy * s * (invertY ? -1 : 1)) : null;
@@ -1324,7 +1324,7 @@ function nearestAxis(px, py) {
 }
 
 function rotateMazeAroundAxis(worldAxis, angle) {
-  if (!maze) return;
+  if (!maze || levelComplete || winAnimating) return;
   const q = new THREE.Quaternion().setFromAxisAngle(worldAxis, angle);
   mazeGroup.quaternion.premultiply(q);
   ball.stopped = false;
