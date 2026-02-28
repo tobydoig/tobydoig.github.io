@@ -850,8 +850,10 @@ function dragMove(x, y) {
   const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
   let q;
   if (drag.axis === 'h') {
-    q = new THREE.Quaternion().setFromAxisAngle(camUp, dx * s);
+    // Spin around camera's forward axis — same as Q/E keys
+    q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), dx * s);
   } else {
+    // Tilt around camera's right axis
     q = new THREE.Quaternion().setFromAxisAngle(camRight, dy * s * (invertY ? -1 : 1));
   }
   mazeGroup.quaternion.premultiply(q);
