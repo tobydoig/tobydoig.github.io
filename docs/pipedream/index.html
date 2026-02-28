@@ -1480,75 +1480,124 @@ window.addEventListener('resize', () => {
   resizeOverlay();
 });
 
-// ─── AXIS ROTATION CONTROLS ────────────────────────────────────────────────
-(function buildAxisControls() {
-  const AXIS_DEFS = [
-    { name: 'X', color: '#ee4444', axis: new THREE.Vector3(1, 0, 0) },
-    { name: 'Y', color: '#44bb44', axis: new THREE.Vector3(0, 1, 0) },
-    { name: 'Z', color: '#4488ee', axis: new THREE.Vector3(0, 0, 1) },
-  ];
+// ─── YAW / PITCH DISC CONTROLS ─────────────────────────────────────────────
+(function buildDiscControls() {
+  const S = 80; // disc diameter px
 
-  const wrap = document.createElement('div');
-  wrap.style.cssText = `
-    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 8px; z-index: 10; touch-action: none;
-  `;
-  document.body.appendChild(wrap);
-
-  AXIS_DEFS.forEach(({ name, color, axis }) => {
-    const btn = document.createElement('div');
-    btn.style.cssText = `
-      width: 72px; height: 36px;
-      background: rgba(10,15,24,0.85);
-      border: 1px solid ${color}55;
-      border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: ew-resize; user-select: none; touch-action: none;
-      font: bold 13px 'Courier New', monospace;
-      color: ${color};
-      letter-spacing: 2px;
-      transition: border-color 0.15s, background 0.15s;
+  function makeDisc({ side, label, hint, cursor, onDrag }) {
+    const cvs = document.createElement('canvas');
+    cvs.width = cvs.height = S;
+    cvs.style.cssText = `
+      position:fixed; bottom:20px; ${side}:20px;
+      width:${S}px; height:${S}px;
+      z-index:10; touch-action:none; cursor:${cursor};
+      border-radius:50%;
     `;
-    btn.textContent = name;
+    document.body.appendChild(cvs);
+    const ctx = cvs.getContext('2d');
+    let active = false;
 
-    let dragging = false;
-    let lastX = 0;
+    function draw(isActive) {
+      ctx.clearRect(0, 0, S, S);
+      const cx = S / 2, cy = S / 2, r = S / 2 - 2;
+      const alpha = isActive ? 0.85 : 0.55;
 
-    function onStart(x) {
+      // Circle background
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(10,15,24,${alpha})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(180,210,255,${isActive ? 0.6 : 0.25})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(180,210,255,${isActive ? 1.0 : 0.55})`;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+
+      function arrowhead(px, py, angle) {
+        const len = 8;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + len * Math.cos(angle + 0.5), py + len * Math.sin(angle + 0.5));
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + len * Math.cos(angle - 0.5), py + len * Math.sin(angle - 0.5));
+        ctx.stroke();
+      }
+
+      if (cursor === 'ew-resize') {
+        // Yaw: top arc like a smile (opens downward)
+        const ar = r * 0.68;
+        const startA = Math.PI * 0.1;  // top-left
+        const endA   = Math.PI * 0.9;  // top-right
+        ctx.beginPath();
+        ctx.arc(cx, cy, ar, startA, endA, false);
+        ctx.stroke();
+        const lx = cx + ar * Math.cos(startA), ly = cy + ar * Math.sin(startA);
+        arrowhead(lx, ly, startA + Math.PI / 2);
+        const rx2 = cx + ar * Math.cos(endA), ry2 = cy + ar * Math.sin(endA);
+        arrowhead(rx2, ry2, endA - Math.PI / 2);
+      } else {
+        // Pitch: right-side arc, arrows at top and bottom
+        const ar = r * 0.68;
+        const startA = Math.PI * 1.6;
+        const endA   = Math.PI * 0.4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ar, startA, endA, false);
+        ctx.stroke();
+        // Top end
+        const tx = cx + ar * Math.cos(startA), ty = cy + ar * Math.sin(startA);
+        arrowhead(tx, ty, startA + Math.PI / 2);
+        // Bottom end
+        const bx = cx + ar * Math.cos(endA), by = cy + ar * Math.sin(endA);
+        arrowhead(bx, by, endA - Math.PI / 2);
+      }
+
+      // Label
+      ctx.font = 'bold 10px Courier New';
+      ctx.fillStyle = `rgba(180,210,255,${isActive ? 1.0 : 0.5})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx, cy);
+    }
+
+    draw(false);
+
+    let lastVal = 0;
+    cvs.addEventListener('pointerdown', e => {
       if (inPreview || levelComplete || winAnimating) return;
-      dragging = true;
-      lastX = x;
-      btn.style.background = 'rgba(30,40,60,0.95)';
-      btn.style.borderColor = color;
-    }
-
-    function onMove(x) {
-      if (!dragging) return;
-      const dx = x - lastX;
-      lastX = x;
-      const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-      const worldAxis = name === 'X' ? camRight
-                      : name === 'Y' ? camUp.clone().normalize()
-                      :                camDir.clone().normalize();
-      rotateMazeAroundAxis(worldAxis, dx * 0.012);
-    }
-
-    function onEnd() {
-      dragging = false;
-      btn.style.background = 'rgba(10,15,24,0.85)';
-      btn.style.borderColor = `${color}55`;
-    }
-
-    btn.addEventListener('pointerdown', e => {
+      active = true;
+      lastVal = cursor === 'ew-resize' ? e.clientX : e.clientY;
+      cvs.setPointerCapture(e.pointerId);
+      draw(true);
       e.stopPropagation();
-      btn.setPointerCapture(e.pointerId);
-      onStart(e.clientX);
     });
-    btn.addEventListener('pointermove', e => onMove(e.clientX));
-    btn.addEventListener('pointerup',   onEnd);
-    btn.addEventListener('pointercancel', onEnd);
+    cvs.addEventListener('pointermove', e => {
+      if (!active) return;
+      const val = cursor === 'ew-resize' ? e.clientX : e.clientY;
+      onDrag(val - lastVal);
+      lastVal = val;
+    });
+    const end = () => { active = false; draw(false); };
+    cvs.addEventListener('pointerup', end);
+    cvs.addEventListener('pointercancel', end);
 
-    wrap.appendChild(btn);
+    return cvs;
+  }
+
+  // Yaw disc — bottom left, horizontal drag rotates around camera up axis
+  makeDisc({
+    side: 'left', label: 'ROTATE', hint: '← →', cursor: 'ew-resize',
+    onDrag: dx => rotateMazeAroundAxis(camUp.clone().normalize(), dx * 0.012),
+  });
+
+  // Pitch disc — bottom right, vertical drag rotates around camera right axis
+  makeDisc({
+    side: 'right', label: 'ROTATE', hint: '↑ ↓', cursor: 'ns-resize',
+    onDrag: dy => {
+      const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
+      rotateMazeAroundAxis(camRight, dy * 0.012);
+    },
   });
 })();
 
