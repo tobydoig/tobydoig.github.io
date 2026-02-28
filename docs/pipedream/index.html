@@ -622,17 +622,13 @@ function onOrientationEvent(e) {
 
   if (tiltBaseBeta === null) { tiltBaseBeta = e.beta; tiltBaseGamma = e.gamma; return; }
 
-  const dBeta  = (e.beta  - tiltBaseBeta)  * Math.PI / 180;
   const dGamma = (e.gamma - tiltBaseGamma) * Math.PI / 180;
   tiltBaseBeta  = e.beta;
   tiltBaseGamma = e.gamma;
 
-  // beta = forward/back tilt → rotate around camera right axis
-  // gamma = left/right tilt  → rotate around camera up axis
-  const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-  const qH = new THREE.Quaternion().setFromAxisAngle(camUp,    dGamma * TILT_SENSITIVITY);
-  const qV = new THREE.Quaternion().setFromAxisAngle(camRight, -dBeta * TILT_SENSITIVITY * 1.4);
-  mazeGroup.quaternion.premultiply(new THREE.Quaternion().multiplyQuaternions(qH, qV));
+  // Rotate around camera's forward axis only (like Z control)
+  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), dGamma * TILT_SENSITIVITY);
+  mazeGroup.quaternion.premultiply(q);
   ball.stopped = false;
 }
 
