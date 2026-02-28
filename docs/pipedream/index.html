@@ -49,8 +49,8 @@
     font-family: Arial, Helvetica, sans-serif;
   }
   #exit-confirm.show { display: flex; }
-  #exit-confirm-msg { font-size: 18px; letter-spacing: 4px; opacity: 0.9; }
-  #exit-confirm-sub { font-size: 13px; letter-spacing: 2px; opacity: 0.5; }
+  #exit-confirm-msg { font-size: 18px; letter-spacing: 4px; opacity: 0.9; color: #7ab0e0; }
+  #exit-confirm-sub { font-size: 13px; letter-spacing: 2px; opacity: 0.5; color: #7ab0e0; }
   #exit-confirm-btns { display: flex; gap: 16px; margin-top: 8px; }
   #exit-confirm-btns button {
     font-size: 12px; letter-spacing: 3px; padding: 10px 28px;
@@ -206,13 +206,13 @@
   <div id="preview-sub"></div>
   <div id="preview-nav">
     <button id="prev-level-btn">◀ PREV</button>
-    <div id="preview-level-label">1</div>
     <button id="next-level-btn">NEXT ▶</button>
   </div>
   <button id="preview-btn">START</button>
 </div>
 
 <div id="tilt-dbg" style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);font-family:Arial,Helvetica,sans-serif;font-size:11px;color:rgba(180,210,255,0.7);z-index:30;pointer-events:none;letter-spacing:1px"></div>
+<div id="level-label" style="display:none; position:fixed; font-size:15px; letter-spacing:5px; opacity:0.7; z-index:11; pointer-events:none; font-family:Arial,Helvetica,sans-serif; white-space:nowrap;"></div>
 <div id="timer">00:00.0</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -317,7 +317,9 @@ function applyTheme() {
     if (!child.material || !child.userData.matType) continue;
     child.material.color.setHex(t[child.userData.matType]);
   }
-  document.getElementById('ui').style.color = t.ui;
+  document.getElementById('ui').style.color = t.winText;
+  document.getElementById('preview-msg').style.color = t.winText;
+  document.getElementById('level-label').style.color = t.winText;
   const win = document.getElementById('win');
   win.style.background = t.win;
   win.style.color      = t.winText;
@@ -837,6 +839,7 @@ function arriveAt(node, cameFrom) {
       winSub.style.color = '';
       winSub.textContent = `TIME: ${fmtTime(totalMs)}`;
       document.getElementById('exit-btn').classList.remove('show');
+      if (window.setDiscsVisible) window.setDiscsVisible(false);
       document.getElementById('win').classList.add('show');
 
       if (isRecord) {
@@ -1495,20 +1498,36 @@ function rotateMazeAroundAxis(worldAxis, angle) {
     return cvs;
   }
 
+  const discs = [];
+
   // Yaw disc — bottom left, horizontal drag rotates around camera up axis
-  makeDisc({
+  discs.push(makeDisc({
     side: 'left', label: 'ROTATE', hint: '← →', cursor: 'ew-resize',
     onDrag: dx => rotateMazeAroundAxis(camUp.clone().normalize(), dx * 0.012),
-  });
+  }));
 
   // Pitch disc — bottom right, vertical drag rotates around camera right axis
-  makeDisc({
+  discs.push(makeDisc({
     side: 'right', label: 'ROTATE', hint: '↑ ↓', cursor: 'ns-resize',
     onDrag: dy => {
       const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
       rotateMazeAroundAxis(camRight, -dy * 0.012);
     },
-  });
+  }));
+
+  window.setDiscsVisible = v => discs.forEach(d => { d.style.display = v ? '' : 'none'; });
+  window.setDiscsVisible(false); // hidden until level starts
+
+  // Position level label centered between the two discs
+  // Discs: bottom:20px, size S — so disc center is at bottom: 20 + S/2
+  // Label sits at that same vertical center, horizontally between left disc edge and right disc edge
+  const discCenter = 20 + S / 2;
+  const ll = document.getElementById('level-label');
+  ll.style.bottom = discCenter + 'px';
+  ll.style.left = (20 + S) + 'px';
+  ll.style.right = (20 + S) + 'px';
+  ll.style.transform = 'translateY(50%)';
+  ll.style.textAlign = 'center';
 })();
 
 // ─── ZOOM ──────────────────────────────────────────────────────────────────
@@ -1683,17 +1702,15 @@ function showPreview() {
   timerRunning = false;
   timerElapsed = 0;
   document.getElementById('exit-btn').classList.remove('show');
-  const cfg = getLevel(mazeLevel);
-  const r = levelToR(mazeLevel);
-  document.getElementById('preview-msg').textContent = `LEVEL ${mazeLevel}`;
+  if (window.setDiscsVisible) window.setDiscsVisible(false);
+  document.getElementById('level-label').style.display = 'none';
   const best = bestTimes[mazeLevel];
-  const pathLen = maze ? maze.maxDist : '?';
-  const sizeStr = `${mazeScheme.toUpperCase()} R=${r} · DIFFICULTY ${pathLen}${cfg.fog ? ` · FOG` : ''}`;
+  const cfg = getLevel(mazeLevel);
   document.getElementById('preview-sub').textContent =
-    sizeStr + (best ? ` · BEST: ${fmtTime(best)}` : '');
+    (cfg.fog ? 'FOG · ' : '') + (best ? `BEST: ${fmtTime(best)}` : '');
+  document.getElementById('preview-msg').textContent = `LEVEL ${mazeLevel}`;
   // Nav buttons
   const unlocked = highestUnlocked();
-  document.getElementById('preview-level-label').textContent = `${mazeLevel}`;
   document.getElementById('prev-level-btn').disabled = mazeLevel <= 1;
   document.getElementById('next-level-btn').disabled = mazeLevel >= unlocked;
   document.getElementById('preview').classList.add('show');
@@ -1710,6 +1727,9 @@ function startLevel() {
   document.getElementById('preview').classList.remove('show');
   document.getElementById('timer').classList.add('show');
   document.getElementById('exit-btn').classList.add('show');
+  if (window.setDiscsVisible) window.setDiscsVisible(true);
+  const ll = document.getElementById('level-label');
+  ll.textContent = `LEVEL ${mazeLevel}`; ll.style.display = 'block';
   // Reset maze orientation and camera so gravity feels natural
   mazeGroup.quaternion.set(0, 0, 0, 1);
   camDir.set(1, 1, 1).normalize();
