@@ -231,7 +231,8 @@ let mazeScheme = 'manhattan';
 let debugSeedOverride = false;
 let debugR = null;
 let showJunctions = false;
-let winAnimating = false; // null = use level config
+let winAnimating = false;
+let levelComplete = false;
 let inPreview = true;
 let timerStart = null;
 let timerElapsed = 0;
@@ -611,7 +612,7 @@ function screenDownGravity() {
 }
 
 function onOrientationEvent(e) {
-  if (!tiltEnabled || winAnimating || inPreview) return;
+  if (!tiltEnabled || winAnimating || inPreview || levelComplete) return;
   if (e.alpha === null) return;
 
   // Debug indicator
@@ -726,6 +727,7 @@ function arriveAt(node, cameFrom) {
     const isRecord = saveBestTime(mazeLevel, totalMs);
     ball.vel = 0;
     ball.stopped = true;
+    levelComplete = true;
 
     // Pipe celebration → then show overlay → then confetti if record
     launchPipeAnimation(() => {
@@ -824,7 +826,7 @@ function dragStart(x, y) {
 function dragEnd() { drag.on = false; }
 
 function dragMove(x, y) {
-  if (!drag.on || winAnimating) return;
+  if (!drag.on || winAnimating || levelComplete) return;
   ball.stopped = false;
   const dx = x - drag.lx, dy = y - drag.ly;
   drag.lx = x; drag.ly = y;
@@ -869,7 +871,7 @@ function orbitEnd() {
   orbitReturn.toUp.copy(orbit.savedUp);
 }
 function orbitMove(x, y) {
-  if (!orbit.on || winAnimating) return;
+  if (!orbit.on || winAnimating || levelComplete) return;
   const dx = x - orbit.lx, dy = y - orbit.ly;
   orbit.lx = x; orbit.ly = y;
 
@@ -917,7 +919,7 @@ window.addEventListener('keyup',   e => keysDown.delete(e.key.toLowerCase()));
 
 function applyKeyRotation() {
   const rolling = keysDown.has('q') || keysDown.has('e');
-  if (!rolling || winAnimating) return;
+  if (!rolling || winAnimating || levelComplete) return;
   ball.stopped = false;
   const s = 0.05;
   const dir = camDir.clone().normalize();
@@ -1553,6 +1555,7 @@ function startLevel() {
   camDir.set(1, 1, 1).normalize();
   camUp.set(0, 1, 0);
   resetTiltBaseline(); // re-baseline tilt to current device orientation
+  levelComplete = false;
   timerStart = performance.now();
   timerRunning = true;
 }
