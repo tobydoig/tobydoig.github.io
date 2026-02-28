@@ -605,7 +605,7 @@ const ball = { edgeIdx: 0, t: 0.05, vel: 0, stopped: false };
 // ─── TILT CONTROLS ─────────────────────────────────────────────────────────
 let tiltEnabled = false;
 let tiltBaseAlpha = null;
-const TILT_SENSITIVITY = 3.0;
+const TILT_SENSITIVITY = 0.8;  // was 3.0, too high
 
 function screenDownGravity() {
   return new THREE.Vector3(0, -1, 0);
@@ -628,7 +628,7 @@ function onOrientationEvent(e) {
   if (dAlpha < -180) dAlpha += 360;
 
   const angle = dAlpha * Math.PI / 180 * TILT_SENSITIVITY;
-  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), -angle);
+  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), angle);
   mazeGroup.quaternion.premultiply(q);
   tiltBaseAlpha = e.alpha; // track incrementally to avoid drift
   ball.stopped = false;
@@ -1427,14 +1427,14 @@ function animate() {
   if (showPath) highlightPath();
 
   // Depth shading: darken pipes further from camera
+  // Use dot product with camDir for true depth (not distance) so zoom doesn't shift colours
   const camPos = camera.position;
   const worldMp = new THREE.Vector3();
-  // Find min/max depth across all children for normalisation
   let minD = Infinity, maxD = -Infinity;
   for (const child of mazeGroup.children) {
     if (!child.userData.midpoint || child.userData.isBall) continue;
     worldMp.copy(child.userData.midpoint).applyMatrix4(mazeGroup.matrixWorld);
-    const d = camPos.distanceTo(worldMp);
+    const d = -camDir.dot(worldMp.clone().sub(camPos)); // depth along view axis
     if (d < minD) minD = d;
     if (d > maxD) maxD = d;
   }
@@ -1452,7 +1452,7 @@ function animate() {
     const matType = child.userData.matType;
     if (!winAnimating && (matType === 'pipe' || matType === 'junction')) {
       worldMp.copy(mp).applyMatrix4(mazeGroup.matrixWorld);
-      const depth = (camPos.distanceTo(worldMp) - minD) / depthRange;
+      const depth = (-camDir.dot(worldMp.clone().sub(camPos)) - minD) / depthRange;
       const bright = 1.0 - depth * 0.65;
       if (showPath && child.userData.edgeId !== undefined && pathEdgeIds.has(child.userData.edgeId)) {
         child.material.color.setRGB(bright, bright * 0.93, 0);
