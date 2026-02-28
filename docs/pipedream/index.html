@@ -612,12 +612,11 @@ function screenDownGravity() {
 }
 
 function onOrientationEvent(e) {
+  const dbg = document.getElementById('tilt-dbg');
+  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `α${e.alpha?.toFixed(1)} lc:${levelComplete}`; }
+
   if (!tiltEnabled || winAnimating || inPreview || levelComplete) return;
   if (e.alpha === null) return;
-
-  // Debug indicator
-  const dbg = document.getElementById('tilt-dbg');
-  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `α${e.alpha?.toFixed(1)}`; }
 
   // Capture baseline on first event
   if (tiltBaseAlpha === null) { tiltBaseAlpha = e.alpha; return; }
