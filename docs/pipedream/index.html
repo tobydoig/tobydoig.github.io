@@ -11,7 +11,15 @@
 <title>Pipedream</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { overflow: hidden; font-family: Arial, Helvetica, sans-serif; }
+  body {
+    overflow: hidden;
+    font-family: Arial, Helvetica, sans-serif;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
   canvas { display: block; }
 
   #main-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }
@@ -904,7 +912,16 @@ function orbitMove(x, y) {
 mainCanvas.addEventListener('mousedown',  e => { dragStart(e.clientX, e.clientY); });
 window.addEventListener('mouseup', e => { dragEnd(); });
 mainCanvas.addEventListener('mousemove', e => { dragMove(e.clientX, e.clientY); });
-window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('contextmenu',  e => e.preventDefault());
+window.addEventListener('dblclick',     e => e.preventDefault());
+// Suppress iOS Safari gesture events (separate from our pinch zoom)
+window.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+window.addEventListener('gesturechange',e => e.preventDefault(), { passive: false });
+window.addEventListener('gestureend',  e => e.preventDefault(), { passive: false });
+// Prevent long-press callout (copy/paste/translate menu on iPad)
+document.addEventListener('touchstart', e => {
+  if (e.touches.length > 1) e.preventDefault(); // block browser multi-touch gestures
+}, { passive: false });
 
 // ─── KEY CONTROLS ──────────────────────────────────────────────────────────
 const keysDown = new Set();
