@@ -604,8 +604,8 @@ const ball = { edgeIdx: 0, t: 0.05, vel: 0, stopped: false };
 
 // ─── TILT CONTROLS ─────────────────────────────────────────────────────────
 let tiltEnabled = false;
-let tiltBaseAlpha = null;
-const TILT_SENSITIVITY = 0.8;  // was 3.0, too high
+let tiltBaseBeta = null, tiltBaseGamma = null;
+const TILT_SENSITIVITY = 0.8;
 
 function screenDownGravity() {
   return new THREE.Vector3(0, -1, 0);
@@ -613,29 +613,30 @@ function screenDownGravity() {
 
 function onOrientationEvent(e) {
   const dbg = document.getElementById('tilt-dbg');
-  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `α${e.alpha?.toFixed(1)} lc:${levelComplete}`; }
+  if (dbg) { dbg.style.display = 'block'; dbg.textContent = `β${e.beta?.toFixed(1)} γ${e.gamma?.toFixed(1)} lc:${levelComplete}`; }
 
   if (!tiltEnabled || winAnimating || inPreview || levelComplete) return;
-  if (e.alpha === null) return;
+  if (e.beta === null || e.gamma === null) return;
 
-  // Capture baseline on first event
-  if (tiltBaseAlpha === null) { tiltBaseAlpha = e.alpha; return; }
+  if (tiltBaseBeta === null) { tiltBaseBeta = e.beta; tiltBaseGamma = e.gamma; return; }
 
-  // Spin around camDir — same as Q/E keys but driven by device rotation (alpha)
-  let dAlpha = e.alpha - tiltBaseAlpha;
-  // Wrap to -180..180
-  if (dAlpha > 180)  dAlpha -= 360;
-  if (dAlpha < -180) dAlpha += 360;
+  const dBeta  = (e.beta  - tiltBaseBeta)  * Math.PI / 180;
+  const dGamma = (e.gamma - tiltBaseGamma) * Math.PI / 180;
+  tiltBaseBeta  = e.beta;
+  tiltBaseGamma = e.gamma;
 
-  const angle = dAlpha * Math.PI / 180 * TILT_SENSITIVITY;
-  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), angle);
-  mazeGroup.quaternion.premultiply(q);
-  tiltBaseAlpha = e.alpha; // track incrementally to avoid drift
+  // beta = forward/back tilt → rotate around camera right axis
+  // gamma = left/right tilt  → rotate around camera up axis
+  const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
+  const qH = new THREE.Quaternion().setFromAxisAngle(camUp,   dGamma * TILT_SENSITIVITY);
+  const qV = new THREE.Quaternion().setFromAxisAngle(camRight, dBeta * TILT_SENSITIVITY);
+  mazeGroup.quaternion.premultiply(new THREE.Quaternion().multiplyQuaternions(qH, qV));
   ball.stopped = false;
 }
 
 function resetTiltBaseline() {
-  tiltBaseAlpha = null;
+  tiltBaseBeta = null;
+  tiltBaseGamma = null;
 }
 
 function startTilt() {
@@ -648,7 +649,6 @@ function initTilt() {
   if (!window.DeviceOrientationEvent) return;
 
   if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-    // iOS — hook onto the START button click (guaranteed user gesture)
     document.getElementById('preview-btn').addEventListener('click', async () => {
       try {
         const res = await DeviceOrientationEvent.requestPermission();
@@ -857,25 +857,26 @@ function dragMove(x, y) {
   mazeGroup.quaternion.premultiply(q);
 }
 
-const orbitReturn = { active: false, t: 0, fromDir: new THREE.Vector3(), fromUp: new THREE.Vector3(), toDir: new THREE.Vector3(), toUp: new THREE.Vector3() };
+const orbitReturn = { active: false, t: 0, fromDir: new THREE.Vector3(), fromUp: new THREE.Vector3(), toDir: new THREE.Vector3(), toUp: new THREE.Vector3(), fromVIEW: 9, toVIEW: 9 };
 
 function orbitStart(x, y) {
   orbit.on = true; orbit.lx = x; orbit.ly = y; orbit.axis = null; orbit.accX = 0; orbit.accY = 0;
-  orbitReturn.active = false; // cancel any in-progress return
-  // Save canonical camera direction to return to
-  orbit.savedDir = camDir.clone();
-  orbit.savedUp  = camUp.clone();
+  orbitReturn.active = false;
+  orbit.savedDir  = camDir.clone();
+  orbit.savedUp   = camUp.clone();
+  orbit.savedVIEW = VIEW;
 }
 function orbitEnd() {
   orbit.on = false;
   if (!orbit.savedDir) return;
-  // Start lerp back to saved position
   orbitReturn.active = true;
   orbitReturn.t = 0;
   orbitReturn.fromDir.copy(camDir);
   orbitReturn.fromUp.copy(camUp);
   orbitReturn.toDir.copy(orbit.savedDir);
   orbitReturn.toUp.copy(orbit.savedUp);
+  orbitReturn.fromVIEW = VIEW;
+  orbitReturn.toVIEW   = orbit.savedVIEW ?? VIEW;
 }
 function orbitMove(x, y) {
   if (!orbit.on || winAnimating || levelComplete) return;
@@ -1431,6 +1432,12 @@ function animate() {
     const ease = 1 - Math.pow(1 - orbitReturn.t, 3); // cubic ease-out
     camDir.lerpVectors(orbitReturn.fromDir, orbitReturn.toDir, ease).normalize();
     camUp.lerpVectors(orbitReturn.fromUp, orbitReturn.toUp, ease).normalize();
+    VIEW = orbitReturn.fromVIEW + (orbitReturn.toVIEW - orbitReturn.fromVIEW) * ease;
+    camera.left   = -VIEW * aspect;
+    camera.right  =  VIEW * aspect;
+    camera.top    =  VIEW;
+    camera.bottom = -VIEW;
+    camera.updateProjectionMatrix();
     if (orbitReturn.t >= 1) orbitReturn.active = false;
   }
   updateCameraPosition();
