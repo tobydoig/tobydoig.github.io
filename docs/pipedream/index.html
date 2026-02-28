@@ -923,8 +923,6 @@ window.addEventListener('gestureend',  e => e.preventDefault(), { passive: false
 document.addEventListener('touchstart', e => {
   if (e.touches.length > 1) e.preventDefault(); // block browser multi-touch gestures
 }, { passive: false });
-// Prevent long-press from triggering share/callout menus
-document.addEventListener('touchend', e => e.preventDefault(), { passive: false });
 // Reset viewport scale if browser zoom has snuck in (e.g. after share sheet dismissal)
 function resetViewportScale() {
   const vp = document.querySelector('meta[name=viewport]');
