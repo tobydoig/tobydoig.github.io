@@ -313,9 +313,24 @@ const THEMES = {
 
 function applyTheme() {
   const t = THEMES.dark;
-  scene.background = new THREE.Color(t.bg);
-  scene.fog         = new THREE.FogExp2(t.bg, 0.025);
-  renderer.setClearColor(t.bg);
+  // Blend base bg with the current level's theme tint
+  const levelTheme = getThemeForLevel(mazeLevel);
+  // Distinct per-theme background tints (stronger than theme.bg which is near-black)
+  const themeTints = {
+    'TUTORIAL':    '#0a0f18',
+    'DUNGEON':     '#1a0e04',
+    'JUNGLE':      '#041a06',
+    'PSYCHEDELIC': '#100418',
+  };
+  const tintHex = levelTheme ? (themeTints[levelTheme.name] || '#0a0f18') : '#0a0f18';
+  const base = new THREE.Color(t.bg);
+  const tint = new THREE.Color(tintHex);
+  const bg = base.clone().lerp(tint, 0.85);
+  const bgHex = bg.getHex();
+
+  scene.background = bg.clone();
+  scene.fog         = new THREE.FogExp2(bgHex, 0.025);
+  renderer.setClearColor(bgHex);
   pipeMat.color.setHex(t.pipe);
   junctionMat.color.setHex(t.junction);
   centerMat.color.setHex(t.center);
@@ -422,7 +437,7 @@ const LEVEL_THEMES = [
     levels: [1, 3],
     bg: '#0a0f18',
     accent: '#7ab0e0',
-    description: 'Rotate the maze with the discs.\nGuide your ball to the glowing orange exit.',
+    description: 'Tilt and spin the world\nroll your ball to glowing light\nthe exit awaits',
     drawIntro(ctx, W, H, t) {
       // Animated grid of nodes connected by pipes
       ctx.clearRect(0, 0, W, H);
@@ -469,7 +484,7 @@ const LEVEL_THEMES = [
     levels: [4, 7],
     bg: '#0d0a08',
     accent: '#c47a2a',
-    description: 'Gates block your path.\nThey open and close on a timer — time your moves.',
+    description: 'Iron gates hunger\nopen and close like a jaw\nlearn to read their breath',
     drawIntro(ctx, W, H, t) {
       ctx.clearRect(0, 0, W, H);
       // Stone brick background
@@ -532,7 +547,7 @@ const LEVEL_THEMES = [
     levels: [8, 11],
     bg: '#061008',
     accent: '#4ab830',
-    description: 'The pipes are alive.\nVines grow and shift — nothing stays still.',
+    description: 'Vines twist the old pipes\nnothing holds its shape for long\nthe maze breathes with you',
     drawIntro(ctx, W, H, t) {
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#061008'; ctx.fillRect(0, 0, W, H);
@@ -595,7 +610,7 @@ const LEVEL_THEMES = [
     levels: [12, 16],
     bg: '#0a0018',
     accent: '#dd44ff',
-    description: 'Nothing is as it seems.\nThe maze shifts and shimmers — trust your instincts.',
+    description: 'Colours eat the walls\nup and down trade places now\ntrust what you cannot see',
     drawIntro(ctx, W, H, t) {
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#0a0018'; ctx.fillRect(0, 0, W, H);
@@ -664,6 +679,7 @@ function applyLevelConfig() {
   mazeScheme = cfg.scheme;
   visEnabled = cfg.fog;
   if (cfg.fogR !== null) visRadius = cfg.fogR;
+  applyTheme();
 }
 
 function levelToR(level) {
@@ -977,16 +993,16 @@ function screenDownGravity() {
 
 function onOrientationEvent(e) {
   if (!tiltEnabled || winAnimating || inPreview || levelComplete) return;
-  if (e.beta === null || e.gamma === null) return;
+  if (e.gamma === null) return;
 
-  if (tiltBaseBeta === null) { tiltBaseBeta = e.beta; tiltBaseGamma = e.gamma; return; }
+  if (tiltBaseGamma === null) { tiltBaseGamma = e.gamma; return; }
 
   const dGamma = (e.gamma - tiltBaseGamma) * Math.PI / 180;
-  tiltBaseBeta  = e.beta;
   tiltBaseGamma = e.gamma;
 
-  // Rotate around camera's forward axis only (like Z control)
-  const q = new THREE.Quaternion().setFromAxisAngle(camDir.clone().normalize(), -dGamma * TILT_SENSITIVITY);
+  // Rotate around world Z axis (screen depth) — pure left/right tilt, no forward/back bleed
+  const worldZ = new THREE.Vector3(0, 0, 1);
+  const q = new THREE.Quaternion().setFromAxisAngle(worldZ, -dGamma * TILT_SENSITIVITY);
   mazeGroup.quaternion.premultiply(q);
   ball.stopped = false;
 }
@@ -1280,6 +1296,18 @@ window.addEventListener('gestureend',  e => e.preventDefault(), { passive: false
 // Prevent long-press callout (copy/paste/translate menu on iPad)
 document.addEventListener('touchstart', e => {
   if (e.touches.length > 1) e.preventDefault(); // block browser multi-touch gestures
+}, { passive: false });
+
+// Block iOS double-tap zoom — detect double-tap and reset viewport immediately
+let lastTapTime = 0;
+document.addEventListener('touchend', e => {
+  const now = Date.now();
+  const dt = now - lastTapTime;
+  if (dt < 300 && dt > 0) {
+    e.preventDefault();
+    resetViewportScale();
+  }
+  lastTapTime = now;
 }, { passive: false });
 // Reset viewport scale if browser zoom has snuck in (e.g. after share sheet dismissal)
 function resetViewportScale() {
@@ -2519,8 +2547,11 @@ function playPipeTune() {
   const ctx = getAudioCtx();
   rollGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
 
+  // Resume context if suspended (iOS requires user gesture), then schedule
+  const schedule = () => {
+    const t0 = ctx.currentTime + 0.05; // small buffer so no notes are in the past
+
   // Jazzy fanfare: arpeggios + chord stabs over 2 seconds
-  const t0 = ctx.currentTime;
   const notes = [
     // fast ascending arpeggio
     [523.2,  0.00, 0.12, 'triangle', 0.28],
@@ -2558,6 +2589,13 @@ function playPipeTune() {
     osc.connect(g); g.connect(ctx.destination);
     osc.start(t); osc.stop(t + dur + 0.05);
   });
+  };
+
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(schedule);
+  } else {
+    schedule();
+  }
 }
 
 function launchPipeAnimation(onComplete) {
@@ -2827,7 +2865,10 @@ animate();
     renderer.setRenderTarget(target);
     renderer.setViewport(0, 0, tw, th);
     renderer.setScissorTest(false);
+    const savedBg = scene.background.clone();
+    scene.background = new THREE.Color('#0a0f18'); // always tutorial blue in splash
     renderer.render(scene, camera);
+    scene.background = savedBg;
     renderer.setRenderTarget(null);
     renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
 
