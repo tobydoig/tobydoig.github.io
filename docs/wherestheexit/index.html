@@ -1981,27 +1981,6 @@ function rotateMazeAroundAxis(worldAxis, angle) {
       border-radius:50%;
     `;
     document.body.appendChild(cvs);
-
-    // Transparent overlay — sits on top of canvas to block iOS double-tap zoom
-    // and long-press share menu, while still forwarding pointer events to the canvas
-    const overlay = document.createElement('div');
-    overlay.style.cssText = `
-      position:fixed; bottom:20px; ${side}:20px;
-      width:${S}px; height:${S}px;
-      z-index:11; border-radius:50%;
-      touch-action:none;
-      -webkit-user-select:none; user-select:none;
-      -webkit-touch-callout:none;
-    `;
-    overlay.addEventListener('contextmenu', e => e.preventDefault());
-    // Forward pointer events to canvas
-    ['pointerdown','pointermove','pointerup','pointercancel'].forEach(type => {
-      overlay.addEventListener(type, e => {
-        e.preventDefault();
-        cvs.dispatchEvent(new PointerEvent(type, e));
-      }, { passive: false });
-    });
-    document.body.appendChild(overlay);
     const ctx = cvs.getContext('2d');
     let active = false;
 
@@ -2061,12 +2040,7 @@ function rotateMazeAroundAxis(worldAxis, angle) {
         arrowhead(bx, by, endA - Math.PI / 2);
       }
 
-      // Label
-      ctx.font = 'bold 10px Arial';
-      ctx.fillStyle = `rgba(180,210,255,${isActive ? 1.0 : 0.5})`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, cx, cy);
+      // (label removed — arrows communicate function; text caused iOS double-tap zoom)
     }
 
     draw(false);
