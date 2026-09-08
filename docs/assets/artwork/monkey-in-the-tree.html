@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monkey in the Tree</title>
+<title>The monkey in the Tree</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,500;1,400&display=swap">
 <style>
-  html, body{ margin:0; padding:0; color-scheme: light dark; }
+  html, body{ margin:0; padding:0; color-scheme: light dark; overflow:hidden; }
   :root{
     --paper: #efe8d8;
     --paper-2: #e6dcc6;
@@ -59,7 +59,7 @@
 
   .phrase-stage{
     position:relative;
-    min-height: clamp(9rem, 22vw, 13rem);
+    min-height: clamp(9rem, 24vw, 15rem);
   }
   .layer{
     position:absolute;
@@ -74,7 +74,7 @@
     margin:0;
     font-family: var(--font-latin);
     font-weight:400;
-    font-size: clamp(1.9rem, 3.6vw, 3.15rem);
+    font-size: clamp(1.5rem, 4vw, 4.2rem);
     line-height:1.32;
     color: var(--ink);
     text-wrap: balance;
@@ -84,7 +84,7 @@
     margin: 1.1rem 0 0;
     font-family: var(--font-latin);
     font-style: italic;
-    font-size: 0.78rem;
+    font-size: clamp(0.68rem, 1vw, 1.05rem);
     letter-spacing: 0.16em;
     color: var(--ink-soft);
   }
@@ -125,6 +125,7 @@
     position:relative;
     width:100%;
     aspect-ratio: 1200 / 1000;
+    overflow:hidden;
   }
   .art-layer{
     position:absolute;
