@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monkey in the Tree</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+  html, body{ margin:0; padding:0; color-scheme: light dark; }
+  :root{
+    --paper: #efe8d8;
+    --paper-2: #e6dcc6;
+    --ink: #38372f;
+    --ink-soft: #6b6558;
+    --ink-faint: #b9ae95;
+    --hairline: #cabf9f;
+
+    --font-latin: 'Noto Serif', 'Iowan Old Style', Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper: #1b1a17;
+      --paper-2: #232019;
+      --ink: #d9d3c2;
+      --ink-soft: #a89d84;
+      --ink-faint: #4a4437;
+      --hairline: #3a352b;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper: #1b1a17;
+    --paper-2: #232019;
+    --ink: #d9d3c2;
+    --ink-soft: #a89d84;
+    --ink-faint: #4a4437;
+    --hairline: #3a352b;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .stage{
+    display:flex;
+    align-items:stretch;
+  }
+
+  .text-panel{
+    flex: 0 1 38%;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    padding: clamp(2.4rem, 6vw, 5.5rem) clamp(1.8rem, 5vw, 4rem);
+    position:relative;
+    border-right: 1px solid var(--hairline);
+  }
+
+  .phrase-stage{
+    position:relative;
+    min-height: clamp(9rem, 22vw, 13rem);
+  }
+  .layer{
+    position:absolute;
+    inset:0 auto auto 0;
+    width:100%;
+    opacity:0;
+    transition: opacity 1.8s ease;
+  }
+  .layer.active{ opacity:1; }
+
+  .phrase{
+    margin:0;
+    font-family: var(--font-latin);
+    font-weight:400;
+    font-size: clamp(1.9rem, 3.6vw, 3.15rem);
+    line-height:1.32;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
+  .lang-label{
+    margin: 1.1rem 0 0;
+    font-family: var(--font-latin);
+    font-style: italic;
+    font-size: 0.78rem;
+    letter-spacing: 0.16em;
+    color: var(--ink-soft);
+  }
+
+  .progress{
+    margin-top: 2.6rem;
+    width: min(280px, 60%);
+    height: 1px;
+    background: var(--hairline);
+    position:relative;
+    overflow:hidden;
+  }
+  .progress-fill{
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:0%;
+    background: var(--ink-soft);
+  }
+  .progress-fill.running{
+    animation: fillbar 10s linear;
+  }
+  @keyframes fillbar{
+    from{ width:0%; }
+    to{ width:100%; }
+  }
+
+  .scene-panel{
+    flex:1 1 62%;
+    position:relative;
+    display:flex;
+    align-items:center;
+    background:
+      radial-gradient(ellipse 75% 65% at 58% 62%, var(--paper-2) 0%, transparent 72%),
+      var(--paper);
+  }
+
+  .scene-frame{
+    position:relative;
+    width:100%;
+    aspect-ratio: 1200 / 1000;
+  }
+  .art-layer{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    display:block;
+    pointer-events:none;
+  }
+  .sway-wrap{
+    position:absolute;
+    inset:0;
+  }
+
+  .sway-a{ animation: swayA 12s ease-in-out infinite; }
+  .sway-b{ animation: swayB 15s ease-in-out infinite; }
+  .sway-c{ animation: swayC 10s ease-in-out infinite; animation-delay:-2s; }
+  .tail-twitch{ animation: swingTail 4.2s ease-in-out infinite; }
+
+  @keyframes swayA{ 0%,100%{ transform: rotate(-1deg); } 50%{ transform: rotate(1.2deg); } }
+  @keyframes swayB{ 0%,100%{ transform: rotate(-0.5deg); } 50%{ transform: rotate(0.6deg); } }
+  @keyframes swayC{ 0%,100%{ transform: rotate(-1.2deg); } 50%{ transform: rotate(1.1deg); } }
+  @keyframes swingTail{ 0%,100%{ transform: rotate(-6deg); } 50%{ transform: rotate(7deg); } }
+
+  @media (prefers-reduced-motion: reduce){
+    .sway-a, .sway-b, .sway-c, .tail-twitch{ animation: none; }
+    .progress-fill.running{ animation: none; width:100%; }
+    .layer{ transition: opacity 0.4s ease; }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="text-panel">
+    <div class="phrase-stage">
+      <div class="layer active" id="layerA">
+        <p class="phrase" id="phraseA" lang="en"></p>
+        <p class="lang-label" id="labelA"></p>
+      </div>
+      <div class="layer" id="layerB">
+        <p class="phrase" id="phraseB" lang="en"></p>
+        <p class="lang-label" id="labelB"></p>
+      </div>
+    </div>
+    <div class="progress"><span class="progress-fill" id="progressFill"></span></div>
+  </div>
+
+  <div class="scene-panel">
+    <div class="scene-frame" role="img" aria-label="The monkey is in the tree">
+      <canvas class="art-layer" id="cvBase"></canvas>
+
+      <div class="sway-wrap sway-a" style="transform-origin:51.25% 65%">
+        <canvas class="art-layer" id="cvBranch1"></canvas>
+      </div>
+
+      <div class="sway-wrap sway-b" style="transform-origin:50.83% 54%">
+        <canvas class="art-layer" id="cvBranch2Base"></canvas>
+        <div class="sway-wrap tail-twitch" style="transform-origin:72.2% 47.8%">
+          <canvas class="art-layer" id="cvTail"></canvas>
+        </div>
+        <canvas class="art-layer" id="cvBranch2Foliage"></canvas>
+      </div>
+
+      <div class="sway-wrap sway-c" style="transform-origin:50% 34%">
+        <canvas class="art-layer" id="cvCrown"></canvas>
+      </div>
+
+      <canvas class="art-layer" id="cvGrain"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------- small deterministic PRNG ----------
+  function mulberry32(seed){
+    return function(){
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function jitterPt(p, amt, rnd){
+    return [ p[0] + (rnd()-0.5)*amt*2, p[1] + (rnd()-0.5)*amt*2 ];
+  }
+
+  // multi-pass sketchy cubic bezier stroke
+  function sketchBezier(ctx, p0, c1, c2, p1, opts){
+    var passes = opts.passes || 4, jitter = opts.jitter != null ? opts.jitter : 2, rnd = opts.rnd;
+    for(var i=0;i<passes;i++){
+      var jp0 = jitterPt(p0, jitter*0.4, rnd);
+      var jc1 = jitterPt(c1, jitter, rnd);
+      var jc2 = jitterPt(c2, jitter, rnd);
+      var jp1 = jitterPt(p1, jitter*0.4, rnd);
+      ctx.beginPath();
+      ctx.moveTo(jp0[0], jp0[1]);
+      ctx.bezierCurveTo(jc1[0], jc1[1], jc2[0], jc2[1], jp1[0], jp1[1]);
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = (opts.width) * (0.72 + rnd()*0.5);
+      ctx.globalAlpha = (opts.alpha != null ? opts.alpha : 0.6) * (0.7 + rnd()*0.3);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // multi-pass sketchy quadratic stroke
+  function sketchQuad(ctx, p0, q, p1, opts){
+    var passes = opts.passes || 3, jitter = opts.jitter != null ? opts.jitter : 2, rnd = opts.rnd;
+    for(var i=0;i<passes;i++){
+      var jp0 = jitterPt(p0, jitter*0.4, rnd);
+      var jq = jitterPt(q, jitter, rnd);
+      var jp1 = jitterPt(p1, jitter*0.4, rnd);
+      ctx.beginPath();
+      ctx.moveTo(jp0[0], jp0[1]);
+      ctx.quadraticCurveTo(jq[0], jq[1], jp1[0], jp1[1]);
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = (opts.width) * (0.75 + rnd()*0.4);
+      ctx.globalAlpha = (opts.alpha != null ? opts.alpha : 0.6) * (0.7 + rnd()*0.3);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function ellipsePts(cx, cy, rx, ry, rotDeg, n){
+    var pts = [], r = rotDeg*Math.PI/180, cr = Math.cos(r), sr = Math.sin(r);
+    for(var i=0;i<=n;i++){
+      var a = (i/n)*Math.PI*2;
+      var x = rx*Math.cos(a), y = ry*Math.sin(a);
+      pts.push([ cx + x*cr - y*sr, cy + x*sr + y*cr ]);
+    }
+    return pts;
+  }
+
+  // sketchy closed outline through a point ring (ellipse/circle)
+  function sketchRing(ctx, pts, opts){
+    var passes = opts.passes || 3, jitter = opts.jitter != null ? opts.jitter : 1.6, rnd = opts.rnd;
+    for(var i=0;i<passes;i++){
+      ctx.beginPath();
+      for(var k=0;k<pts.length;k++){
+        var jp = jitterPt(pts[k], jitter, rnd);
+        if(k===0) ctx.moveTo(jp[0], jp[1]); else ctx.lineTo(jp[0], jp[1]);
+      }
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = (opts.width||1.6) * (0.8 + rnd()*0.35);
+      ctx.globalAlpha = (opts.alpha != null ? opts.alpha : 0.65) * (0.75 + rnd()*0.25);
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // light directional hatch, clipped to an ellipse, optionally only one side of it
+  function hatchEllipse(ctx, cx, cy, rx, ry, rotDeg, opts){
+    var rnd = opts.rnd;
+    ctx.save();
+    var pts = ellipsePts(cx, cy, rx, ry, rotDeg, 48);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for(var i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    ctx.clip();
+    ctx.translate(cx, cy);
+    ctx.rotate((rotDeg + (opts.angle!=null?opts.angle:48)) * Math.PI/180);
+    var R = Math.max(rx, ry) * 1.7;
+    var spacing = opts.spacing || 5;
+    var start = opts.sideOnly ? 0 : -R;
+    ctx.strokeStyle = opts.color;
+    ctx.lineWidth = opts.width || 1;
+    for(var x=start; x<=R; x+=spacing){
+      var jx = x + (rnd()-0.5)*2;
+      ctx.beginPath();
+      ctx.moveTo(jx + (rnd()-0.5)*2, -R);
+      ctx.lineTo(jx + (rnd()-0.5)*3, R);
+      ctx.globalAlpha = (opts.alpha||0.28) * (0.55 + rnd()*0.45);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // small closed loop scribble mark
+  function scribbleLoop(ctx, cx, cy, size, rnd, color, alpha){
+    var n = 5 + Math.floor(rnd()*3);
+    var a0 = rnd()*Math.PI*2, pts = [];
+    for(var i=0;i<n;i++){
+      var a = a0 + i*(Math.PI*2/n)*(0.78 + rnd()*0.44);
+      var r = size*(0.5 + rnd()*0.6);
+      pts.push([ cx + Math.cos(a)*r, cy + Math.sin(a)*r ]);
+    }
+    pts.push(pts[0]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for(var k=1;k<pts.length-1;k++){
+      var mx=(pts[k][0]+pts[k+1][0])/2, my=(pts[k][1]+pts[k+1][1])/2;
+      ctx.quadraticCurveTo(pts[k][0], pts[k][1], mx, my);
+    }
+    ctx.lineTo(pts[pts.length-1][0], pts[pts.length-1][1]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1 + rnd()*0.8;
+    ctx.globalAlpha = alpha;
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function scribbleCloud(ctx, rnd, o){
+    var rotR = (o.rot||0) * Math.PI/180, cr=Math.cos(rotR), sr=Math.sin(rotR);
+    for(var i=0;i<o.count;i++){
+      var lx, ly;
+      do { lx = rnd()*2-1; ly = rnd()*2-1; } while(lx*lx + ly*ly > 1);
+      var px = lx*o.rx, py = ly*o.ry;
+      var wx = px*cr - py*sr + o.cx, wy = px*sr + py*cr + o.cy;
+      var size = o.sizeMin + rnd()*(o.sizeMax - o.sizeMin);
+      scribbleLoop(ctx, wx, wy, size, rnd, o.color, o.alpha*(0.55 + rnd()*0.55));
+    }
+  }
+
+  function foliageCluster(ctx, rnd, cx, cy, rx, ry, rot, colors){
+    scribbleCloud(ctx, rnd, { cx:cx, cy:cy, rx:rx, ry:ry, rot:rot, count: Math.round(rx*0.62), color: colors.inkFaint, alpha:0.4, sizeMin:12, sizeMax:24 });
+    scribbleCloud(ctx, rnd, { cx:cx, cy:cy, rx:rx, ry:ry, rot:rot, count: Math.round(rx*0.4), color: colors.ink, alpha:0.42, sizeMin:7, sizeMax:14 });
+    scribbleCloud(ctx, rnd, { cx:cx+rx*0.12, cy:cy+ry*0.28, rx:rx*0.55, ry:ry*0.5, rot:rot, count: Math.round(rx*0.2), color: colors.ink, alpha:0.58, sizeMin:5, sizeMax:9 });
+  }
+
+  // ---------- canvas setup ----------
+  function setupCanvas(id){
+    var canvas = document.getElementById(id);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    canvas.width = 1200 * dpr;
+    canvas.height = 1000 * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+  }
+
+  function readColors(){
+    var cs = getComputedStyle(document.documentElement);
+    return {
+      ink: cs.getPropertyValue('--ink').trim(),
+      inkSoft: cs.getPropertyValue('--ink-soft').trim(),
+      inkFaint: cs.getPropertyValue('--ink-faint').trim()
+    };
+  }
+
+  var ctxBase = setupCanvas('cvBase');
+  var ctxBranch1 = setupCanvas('cvBranch1');
+  var ctxBranch2Base = setupCanvas('cvBranch2Base');
+  var ctxTail = setupCanvas('cvTail');
+  var ctxBranch2Foliage = setupCanvas('cvBranch2Foliage');
+  var ctxCrown = setupCanvas('cvCrown');
+  var ctxGrain = setupCanvas('cvGrain');
+
+  function drawBase(ctx, colors){
+    var rnd = mulberry32(11);
+    ctx.clearRect(0,0,1200,1000);
+
+    ctx.save();
+    ctx.filter = 'blur(9px)';
+    ctx.beginPath();
+    var sh = ellipsePts(620, 924, 400, 14, 0, 40);
+    ctx.moveTo(sh[0][0], sh[0][1]);
+    for(var i=1;i<sh.length;i++) ctx.lineTo(sh[i][0], sh[i][1]);
+    ctx.closePath();
+    ctx.fillStyle = colors.inkFaint;
+    ctx.globalAlpha = 0.55;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    sketchQuad(ctx, [150,906], [620,893], [1090,906], { color: colors.ink, width:1.6, alpha:0.6, jitter:2.4, passes:3, rnd:rnd });
+    sketchQuad(ctx, [560,902], [552,880], [545,860], { color: colors.ink, width:1.6, alpha:0.5, jitter:1.6, passes:2, rnd:rnd });
+    sketchQuad(ctx, [600,904], [606,878], [598,852], { color: colors.ink, width:1.6, alpha:0.45, jitter:1.6, passes:2, rnd:rnd });
+    sketchQuad(ctx, [700,903], [712,882], [726,862], { color: colors.ink, width:1.6, alpha:0.5, jitter:1.6, passes:2, rnd:rnd });
+
+    sketchBezier(ctx, [620,905],[610,830],[630,780],[615,720], { color: colors.ink, width:15, alpha:0.55, jitter:2.6, passes:5, rnd:rnd });
+    sketchBezier(ctx, [615,720],[600,660],[625,600],[605,520], { color: colors.ink, width:10, alpha:0.55, jitter:2.2, passes:5, rnd:rnd });
+    sketchBezier(ctx, [605,520],[590,460],[615,400],[600,335], { color: colors.ink, width:6,  alpha:0.55, jitter:1.8, passes:4, rnd:rnd });
+
+    for(var t=0; t<9; t++){
+      var ty = 780 - t*48 + (rnd()-0.5)*10;
+      var tx = 612 + (rnd()-0.5)*20;
+      var side = rnd() > 0.5 ? 1 : -1;
+      sketchQuad(ctx, [tx,ty], [tx+side*7,ty+4], [tx+side*13,ty+9], { color: colors.ink, width:1, alpha:0.3, jitter:1, passes:1, rnd:rnd });
+    }
+  }
+
+  function drawBranch1(ctx, colors){
+    var rnd = mulberry32(22);
+    ctx.clearRect(0,0,1200,1000);
+    sketchBezier(ctx, [615,650],[560,600],[500,560],[460,520], { color: colors.ink, width:6, alpha:0.5, jitter:2, passes:4, rnd:rnd });
+    sketchBezier(ctx, [460,520],[430,495],[415,485],[385,470], { color: colors.ink, width:3.4, alpha:0.5, jitter:1.6, passes:3, rnd:rnd });
+    foliageCluster(ctx, rnd, 385, 455, 88, 62, -10, colors);
+  }
+
+  function drawBranch2Base(ctx, colors){
+    var rnd = mulberry32(33);
+    ctx.clearRect(0,0,1200,1000);
+
+    sketchBezier(ctx, [610,540],[680,500],[740,470],[800,450], { color: colors.ink, width:7, alpha:0.5, jitter:2, passes:4, rnd:rnd });
+    sketchBezier(ctx, [800,450],[830,440],[850,435],[880,425], { color: colors.ink, width:3.6, alpha:0.5, jitter:1.6, passes:3, rnd:rnd });
+
+    // body
+    var bx=848, by=458, brx=30, bry=36, brot=-8;
+    var bodyPts = ellipsePts(bx,by,brx,bry,brot,40);
+    sketchRing(ctx, bodyPts, { color: colors.ink, width:1.8, alpha:0.62, jitter:1.6, passes:3, rnd:rnd });
+    hatchEllipse(ctx, bx,by,brx,bry,brot, { color: colors.ink, alpha:0.22, spacing:5, angle:48, sideOnly:true, rnd:rnd });
+
+    // head
+    var hx=833, hy=396, hr=22;
+    var headPts = ellipsePts(hx,hy,hr,hr,0,32);
+    sketchRing(ctx, headPts, { color: colors.ink, width:1.7, alpha:0.62, jitter:1.4, passes:3, rnd:rnd });
+    hatchEllipse(ctx, hx,hy,hr,hr,0, { color: colors.ink, alpha:0.18, spacing:5, angle:48, sideOnly:true, rnd:rnd });
+
+    // neck connectors, fusing head and body into one silhouette
+    sketchBezier(ctx, [829,418],[831,420],[835,422],[838,424], { color: colors.ink, width:1.6, alpha:0.55, jitter:1, passes:3, rnd:rnd });
+    sketchBezier(ctx, [837,418],[841,419],[845,421],[848,422], { color: colors.ink, width:1.6, alpha:0.55, jitter:1, passes:3, rnd:rnd });
+
+    // ear
+    var earPts = ellipsePts(848,384,7,8,10,20);
+    sketchRing(ctx, earPts, { color: colors.ink, width:1.3, alpha:0.55, jitter:1, passes:2, rnd:rnd });
+
+    // muzzle (outline only, left open so the paper shows through as a highlight)
+    var muzPts = ellipsePts(815,406,9,7,-5,24);
+    sketchRing(ctx, muzPts, { color: colors.ink, width:1.1, alpha:0.42, jitter:0.9, passes:2, rnd:rnd });
+    sketchQuad(ctx, [812,410],[815,412],[819,411], { color: colors.ink, width:1.1, alpha:0.4, jitter:0.6, passes:2, rnd:rnd });
+
+    // eye
+    ctx.beginPath();
+    ctx.arc(823, 400, 1.7, 0, Math.PI*2);
+    ctx.fillStyle = colors.ink;
+    ctx.globalAlpha = 0.75;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // arm reaching to the branch
+    sketchBezier(ctx, [823,451],[810,457],[800,453],[800,446], { color: colors.ink, width:2.6, alpha:0.55, jitter:1.3, passes:3, rnd:rnd });
+    for(var f=0; f<3; f++){
+      var fx = 796 + f*4, fy = 443 + f*2;
+      sketchQuad(ctx, [800,446],[fx-2,fy-3],[fx,fy], { color: colors.ink, width:1, alpha:0.4, jitter:0.6, passes:1, rnd:rnd });
+    }
+  }
+
+  function drawTail(ctx, colors){
+    var rnd = mulberry32(44);
+    ctx.clearRect(0,0,1200,1000);
+    sketchBezier(ctx, [866,478],[902,494],[926,474],[916,442], { color: colors.ink, width:4.4, alpha:0.55, jitter:1.8, passes:4, rnd:rnd });
+    sketchBezier(ctx, [916,442],[912,418],[892,414],[898,434], { color: colors.ink, width:2.4, alpha:0.55, jitter:1.3, passes:3, rnd:rnd });
+  }
+
+  function drawBranch2Foliage(ctx, colors){
+    var rnd = mulberry32(55);
+    ctx.clearRect(0,0,1200,1000);
+    foliageCluster(ctx, rnd, 858, 474, 50, 38, 4, colors);
+    foliageCluster(ctx, rnd, 935, 398, 54, 36, -6, colors);
+  }
+
+  function drawCrown(ctx, colors){
+    var rnd = mulberry32(66);
+    ctx.clearRect(0,0,1200,1000);
+    sketchBezier(ctx, [600,340],[580,300],[560,260],[520,220], { color: colors.ink, width:4.6, alpha:0.5, jitter:1.8, passes:3, rnd:rnd });
+    sketchBezier(ctx, [600,340],[630,300],[660,270],[700,230], { color: colors.ink, width:4.6, alpha:0.5, jitter:1.8, passes:3, rnd:rnd });
+    sketchBezier(ctx, [600,340],[605,290],[600,250],[595,205], { color: colors.ink, width:3.2, alpha:0.5, jitter:1.6, passes:3, rnd:rnd });
+
+    foliageCluster(ctx, rnd, 495, 195, 98, 66, -6, colors);
+    foliageCluster(ctx, rnd, 715, 205, 94, 62, 5, colors);
+    foliageCluster(ctx, rnd, 600, 178, 118, 74, 0, colors);
+  }
+
+  function drawGrain(ctx, colors){
+    var rnd = mulberry32(77);
+    ctx.clearRect(0,0,1200,1000);
+    ctx.fillStyle = colors.inkFaint;
+    for(var i=0;i<2600;i++){
+      var x = rnd()*1200, y = rnd()*1000;
+      ctx.globalAlpha = 0.02 + rnd()*0.05;
+      ctx.fillRect(x, y, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawAll(){
+    var colors = readColors();
+    drawBase(ctxBase, colors);
+    drawBranch1(ctxBranch1, colors);
+    drawBranch2Base(ctxBranch2Base, colors);
+    drawTail(ctxTail, colors);
+    drawBranch2Foliage(ctxBranch2Foliage, colors);
+    drawCrown(ctxCrown, colors);
+    drawGrain(ctxGrain, colors);
+  }
+
+  drawAll();
+
+  var scheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+  if(scheme && scheme.addEventListener) scheme.addEventListener('change', drawAll);
+  new MutationObserver(drawAll).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+})();
+</script>
+
+<script>
+(function(){
+  var data = [
+    { text: "The monkey is in the tree.", label: "English", lang:"en" },
+    { text: "Der Affe ist auf dem Baum.", label: "Deutsch", lang:"de" },
+    { text: "Opice je na stromě.", label: "Čeština", lang:"cs" },
+    { text: "Le singe est dans l'arbre.", label: "Français", lang:"fr" },
+    { text: "El mono está en el árbol.", label: "Español", lang:"es" }
+  ];
+
+  var layers = [
+    { el: document.getElementById('layerA'), phrase: document.getElementById('phraseA'), label: document.getElementById('labelA') },
+    { el: document.getElementById('layerB'), phrase: document.getElementById('phraseB'), label: document.getElementById('labelB') }
+  ];
+  var progressFill = document.getElementById('progressFill');
+  var activeLayer = 0;
+  var dataIndex = 0;
+
+  function paint(layer, entry){
+    layer.phrase.textContent = entry.text;
+    layer.phrase.setAttribute('lang', entry.lang);
+    layer.label.textContent = entry.label;
+  }
+
+  paint(layers[0], data[0]);
+  restartProgress();
+
+  function restartProgress(){
+    progressFill.classList.remove('running');
+    void progressFill.offsetWidth;
+    progressFill.classList.add('running');
+  }
+
+  function advance(){
+    var nextIndex = (dataIndex + 1) % data.length;
+    var nextLayer = layers[1 - activeLayer];
+    paint(nextLayer, data[nextIndex]);
+    nextLayer.el.classList.add('active');
+    layers[activeLayer].el.classList.remove('active');
+    activeLayer = 1 - activeLayer;
+    dataIndex = nextIndex;
+    restartProgress();
+  }
+
+  setInterval(advance, 10000);
+})();
+</script>
+</body>
+</html>
