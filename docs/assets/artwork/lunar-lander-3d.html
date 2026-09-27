@@ -43,6 +43,26 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .keys{display:grid;grid-template-columns:auto auto;gap:3px 18px;justify-content:center;text-align:left;margin:14px 0 6px;font-size:14px}
 .keys b{font-weight:400;color:var(--line)} .keys span{color:var(--dim)}
 .go{margin-top:14px;color:var(--pad)}
+.resume{margin:0 0 1em;color:var(--line)} .resume b{font-weight:400;color:var(--pad)} .resume .linkbtn{margin-top:8px}
+.loadout{display:grid;grid-template-columns:auto minmax(90px,1fr) auto;gap:10px 14px;align-items:center;margin:18px auto 2px;max-width:30em;text-align:left;font-size:14px}
+.loadout .k{color:var(--dim)} .loadout b{font-weight:400;white-space:nowrap} .loadout em{font-style:normal;color:var(--warn)}
+.lb{position:relative;display:block;height:9px;border:1px solid var(--dim)}
+.lb i{position:absolute;left:1px;top:1px;bottom:1px;width:0;background:var(--line);transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.anim .lb i{width:calc(var(--w) - 2px)}
+.lb u{position:absolute;top:-5px;bottom:-5px;width:2px;margin-left:-1px;background:var(--pad);opacity:0;transition:opacity .4s .1s}
+.anim .lb u{opacity:.9}
+.pips span{display:inline-block;width:12px;height:12px;margin-right:6px;border:1px solid var(--pad);border-radius:50%;background:var(--pad);transform:scale(0);vertical-align:middle}
+.anim .pips span{animation:pipIn .3s var(--d) forwards}
+.anim .pips span.lost{animation:pipIn .3s var(--d) forwards,pipLost .6s calc(var(--d) + .5s) forwards}
+@keyframes pipIn{from{transform:scale(0)}70%{transform:scale(1.25)}to{transform:scale(1)}}
+@keyframes pipLost{to{background:transparent;border-color:var(--warn);opacity:.35;transform:scale(.8)}}
+.mapsw{position:relative;display:inline-block;width:46px;height:26px;border:1px solid var(--dim)}
+.mapsw i{position:absolute;inset:2px;background:linear-gradient(160deg,#1b2545 0 35%,#5f8ed0 35% 60%,#1b2545 60%);opacity:var(--from);transition:opacity 1s 1.9s}
+.anim .mapsw i{opacity:var(--to)}
+.mapsw s{position:absolute;left:-4px;right:-4px;top:50%;height:1px;background:var(--warn);transform:rotate(-24deg) scaleX(0);transition:transform .4s 2.7s}
+.anim .mapsw s{transform:rotate(-24deg) scaleX(1)}
+.lnote{font-size:12px;color:var(--dim);margin:.2em 0 0}
+@media (prefers-reduced-motion: reduce){.lb i,.lb u,.mapsw i,.mapsw s{transition:none}.anim .pips span{animation:none;transform:scale(1)}.anim .pips span.lost{animation:none;transform:scale(.8);background:transparent;border-color:var(--warn);opacity:.35}}
 .credit{margin:16px 0 0;font-size:13px}
 .credit a{color:var(--dim);text-decoration:none;border-bottom:1px solid rgba(106,122,163,.5)}
 .credit a:hover,.credit a:focus-visible{color:var(--line);border-color:var(--line)}
@@ -137,15 +157,17 @@ const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 // ---- level design ----
 // Difficulty ramps: more bends, dead ends, then tunnels (Scramble-style), then
 // bending tunnels, narrower passages and wavier floors and roofs.
+// Gentle ramp, one new idea at a time: 1 bend; 2 a dead end; 3 one short straight roomy
+// tunnel; 4 facing the wrong way at the start; then slowly longer, tighter, more tunnels.
 function levelSpec(n){
-  const segs=Math.min(1+n,8);
+  const segs=Math.min(8,2+Math.floor((n-1)*2/3));
   return{n,segs,
-    turn:0.35+Math.min(n,7)*0.12,
-    branches:n<2?0:Math.min(1+Math.floor((n-2)/2),3),
-    tunnels:n<3?0:Math.min(n-2,segs-2),
-    clear:Math.max(34,72-6*(n-3)),
-    hw:Math.max(16,28-2*n),
-    wob:clamp((n-2)*0.18,0,1)};
+    turn:0.35+Math.min(n,8)*0.09,
+    branches:n<2?0:Math.min(1+Math.floor((n-2)/3),3),
+    tunnels:n<3?0:Math.min(1+Math.floor((n-3)/2),segs-2),
+    clear:Math.max(36,84-6*(n-3)),
+    hw:Math.max(16,30-1.5*n),
+    wob:clamp((n-3)*0.15,0,1)};
 }
 let rcs=0,rcsMax=3,rcsRate=.5,rcsWait=0;
 let LV,SEGS=[],PAD,START,START_HEADING,maxFuel,level=1,score=0;
@@ -170,7 +192,7 @@ function buildLevel(n){
     let bp=main[k];
     let a2=Math.atan2(main[k+1].y-bp.y,main[k+1].x-bp.x)+(rng()<.5?-1:1)*(0.9+rng()*0.7);
     // a branch leaving from inside a tunnel is a side tunnel
-    const m=1+Math.floor(rng()*2),bt=(n>=5&&rng()<.45)||tun.has(k-1)||tun.has(k);
+    const m=1+Math.floor(rng()*2),bt=(n>=6&&rng()<.45)||tun.has(k-1)||tun.has(k);
     for(let j=0;j<m;j++){const l=110+rng()*130;
       const nq={x:bp.x+Math.cos(a2)*l,y:bp.y+Math.sin(a2)*l,f:clamp(bp.f+(rng()-.5)*50,40,130)};
       raw.push({a:bp,b:nq,tun:bt,br:j,k});bp=nq;a2+=(rng()-.5)*1.2;}
@@ -184,10 +206,10 @@ function buildLevel(n){
     return{ax:a.x,ay:a.y,dx,dy,l2:dx*dx+dy*dy,fa:a.f,fb:b.f,tun:t,capA,capB,clear:LV.clear};});
   PAD={x:p.x,y:p.y,h:p.f};START=main[0];
   const first=Math.atan2(main[1].y-main[0].y,main[1].x-main[0].x);
-  START_HEADING=n<=2?first:first+(rng()<.5?-1:1)*(0.7+rng()*0.8);
-  maxFuel=(420+len*0.6)*Math.max(0.6,1-0.04*(n-1));
+  START_HEADING=n<=3?first:first+(rng()<.5?-1:1)*(0.7+rng()*0.8);
+  maxFuel=(480+len*0.65)*Math.max(0.65,1-0.03*(n-1));
   // damper tank: short bursts, refilled slowly from the main tank (slower at higher levels)
-  rcsMax=Math.max(1.5,3-0.15*(n-1));rcsRate=rcsMax/(6+0.5*(n-1));
+  rcsMax=Math.max(1.5,3-0.1*(n-1));rcsRate=rcsMax/(6+0.3*(n-1));
 }
 
 // The world: F = floor, R = underside of overhead rock (Infinity = open sky),
@@ -259,6 +281,7 @@ const KEYMAP={s:'brake',S:'brake',x:'brake',X:'brake',Shift:'boost',ArrowLeft:'t
 addEventListener('keydown',e=>{
   if(logOpen){if(e.key==='l'||e.key==='L'||e.key==='Escape'){toggleLog();e.preventDefault();}return;}
   if((e.key==='l'||e.key==='L')&&!e.repeat){toggleLog();return;}
+  if((e.key==='n'||e.key==='N')&&!e.repeat&&state==='ready'&&msgKind==='intro'&&level>1){newGame();return;}
   initAudio();
   if(KEYMAP[e.key]){keys[KEYMAP[e.key]]=true;e.preventDefault();}
   if(e.repeat)return;
@@ -280,13 +303,13 @@ document.querySelectorAll('#touch button').forEach(b=>{
   b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);
   b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off);
 });
-document.getElementById('msg').addEventListener('pointerdown',e=>{if(e.target.closest('a'))return;if(e.target.closest('#openlog')){e.stopPropagation();toggleLog();return;}initAudio();advance();});
+document.getElementById('msg').addEventListener('pointerdown',e=>{if(e.target.closest('a'))return;if(e.target.closest('#newgame')){e.stopPropagation();newGame();return;}if(e.target.closest('#openlog')){e.stopPropagation();toggleLog();return;}initAudio();advance();});
 
 function advance(){
   if(paused){paused=false;hideMsg();return;}
   if(state==='ready'){state='flying';hideMsg();logStart();}
   else if(state==='crashed'){resetLander();state='flying';hideMsg();logStart();}
-  else if(state==='landed'){level++;buildLevel(level);resetLander();state='ready';showMsg('level');}
+  else if(state==='landed'){prevLoadout={fuel:maxFuel,rcs:rcsMax};level++;buildLevel(level);resetLander();state='ready';showMsg('level');}
 }
 
 // ---- audio ----
@@ -374,7 +397,7 @@ function touchdown(){
     const msgs={Descent:'Came down too fast.',Sideways:'Still moving sideways at touchdown.',Tilt:'Not upright at touchdown.','On pad':'Touched down off the pad.'};
     return crash(msgs[fail[0]],true);}
   state='landed';logEv('LANDED');L.vx=L.vy=L.vz=0;
-  const pts=100+Math.round(fuel)+level*50;score+=pts;lastPts=pts;
+  const pts=100+Math.round(fuel)+level*50;score+=pts;lastPts=pts;writeSave(level+1,score);saved=loadSave();
   blip([523,659,784],.18,'triangle',.07);showMsg('landed');
 }
 function crash(r,keepReport){
@@ -555,12 +578,12 @@ function drawCompass(dx,dy,nx,ny,inView){
 // A small perspective view of the terrain around the lander, seen from the viewer's
 // side of the slice, with the slice drawn as a translucent plane so the 2D view and
 // the 3D world line up. Mountains are flattened at the ceiling so canyons read as trenches.
-// Levels 1-3: full map. 4-5: the map fades out as you near the pad, so the final
+// Levels 1-4: full map. 5-6: the map fades out as you near the pad, so the final
 // approach is flown on the slice. 6-7: it also covers a shrinking area. 8+: offline.
-const MAP_LAST=7;let mapOn=true;
+const MAP_LAST=8;let mapOn=true;
 function mapSpec(n){
   if(n>MAP_LAST)return null;
-  return{N:n<=5?31:n===6?21:15,fade:n>=4};
+  return{N:n<=6?31:n===7?21:15,fade:n>=5};
 }
 const G3={key:null,N:31,st:16,h:new Float32Array(31*31),roof:new Uint8Array(31*31),ox:0,oy:0};
 function mapAvailable(){return level<=MAP_LAST;}
@@ -663,7 +686,7 @@ function draw3D(dx,dy,nx,ny){
 // it matches the 2D view exactly. Limited uses per attempt.
 let peek=null,peeksLeft=0;
 const PK={IN:.9,HOLD:3,OUT:.9,N:51,ST:16};
-function peeksFor(n){return Math.max(2,6-n);}
+function peeksFor(n){return Math.max(3,6-Math.floor((n-1)/2));}
 function startPeek(){
   if(peek){if(peek.phase!=='out'){peek.phase='out';peek.timer=0;}return;}
   if(state!=='flying'||paused||peeksLeft<=0)return;
@@ -852,7 +875,7 @@ const CONTROLS=`<div class="keys desk-only">
 <b>← →</b><span>tilt lander</span><b>↑ / Space</b><span>thrust</span>
 <b>Shift + thrust</b><span>boost (burns fuel fast)</span>
 <b>S  (or X)</b><span>drift damper: cancel drift into/out of the screen (short bursts, refills from fuel)</span>
-<b>A D  (or Q E)</b><span>rotate the view</span><b>V</b><span>toggle 3D map (levels 1–7)</span><b>G</b><span>toggle depth ghosts</span>
+<b>A D  (or Q E)</b><span>rotate the view</span><b>V</b><span>toggle 3D map (levels 1–8)</span><b>G</b><span>toggle depth ghosts</span>
 <b>C</b><span>3D peek: freeze time and see the world in 3D (a few per attempt)</span><b>R  /  P  /  M</b><span>restart, pause, mute</span><b>L</b><span>flight log</span></div>
 <p class="touch-only">Left buttons rotate the view and damp drift. Right buttons tilt and thrust; hold ⇧ with thrust to boost.</p>`;
 const credit='<p class="credit"><a href="https://tobyandzuzka.com" target="_blank" rel="noopener">tobyandzuzka.com</a></p>';
@@ -861,37 +884,79 @@ function levelBlurb(){
   const n=level,out=[];
   if(n===1)out.push('One gentle bend between you and the pad.');
   else if(n===2)out.push('Now with a dead end. Not every valley goes somewhere.');
-  else if(n===3)out.push('Tunnels. The rock overhead is as solid as the ground, so watch the roof.');
+  else if(n===3)out.push('Your first tunnel: one straight section with plenty of headroom. The rock overhead is as solid as the ground, so watch the roof.');
+  else if(n===4)out.push('A longer route, and you start facing the wrong way. Look around; a 3D peek helps.');
   else out.push('Longer route, tighter passages, less fuel.');
-  if(n===3)out.push('You also start facing the wrong way. Look around.');
   if(LV.bend&&!levelBlurb.bendShown){out.push('One of these tunnels bends, so you’ll have to turn inside it.');levelBlurb.bendShown=true;}
-  if(n===5)out.push('Some dead ends are tunnels now too.');
-  if(n===4)out.push('From here the 3D map fades out as you near the pad. Fly the final approach on the slice.');
-  if(n===6)out.push('The 3D map now covers a smaller area. Keep track of the route yourself.');
-  if(n===7)out.push('The map’s range shrinks again. This is its last level.');
-  if(n===MAP_LAST+1)out.push('The 3D map is offline from here on. The slice and the compass are all you get.');
+  if(n===6)out.push('Some dead ends are tunnels now too.');
+  if(n===5)out.push('From here the 3D map fades out as you near the pad. Fly the final approach on the slice.');
+  if(n===7)out.push('The 3D map now covers a smaller area. Keep track of the route yourself.');
+  if(n===8)out.push('The map’s range shrinks again. This is its last level.');
+  if(n===MAP_LAST+1)out.push('The 3D map is offline from here on. The slice, the compass and your 3D peeks are all you get.');
   return out.map(t=>`<p>${t}</p>`).join('');
 }
-function showMsg(kind){
+let msgKind='';
+function showMsg(kind){msgKind=kind;
   let h='';
   if(kind==='intro')h=`<h1>LUNAR LANDER 3D</h1>
+${level>1?`<p class="resume">Welcome back. Continuing from <b>level ${level}</b> with ${score} points${saved&&saved.best?` (best ${saved.best})`:''}.<br><button id="newgame" class="linkbtn">Start over from level 1${isTouch?'':' (N)'}</button></p>`:''}
 <p>The moon is three-dimensional. Your screen is a single vertical slice through it, centred on your lander. Rotate the view to find the way to the amber pad; the compass needle always points to it.</p>
 <p>Only what’s on screen can hit you, but rotating can swing rock into you.</p>
 ${CONTROLS}<p>Land with under ${T.SAFE_VZ} m/s down, under ${T.SAFE_H} m/s sideways (including drift), and nearly upright.</p>
 ${levelBlurb()}${go('to launch')}${credit}`;
-  else if(kind==='level')h=`<h2>Level ${level}</h2>${levelBlurb()}${go('to launch')}`;
+  else if(kind==='level')h=`<h2>Level ${level}</h2>${levelBlurb()}${loadoutHTML()}${go('to launch')}`;
   else if(kind==='landed')h=`<h2>The Eagle has landed</h2><p>+${lastPts} points, with ${Math.round(fuel)} fuel to spare.</p>${report()}${logBtn}${go('for level '+(level+1))}`;
   else if(kind==='crashed')h=`<h2>Lander lost</h2><p>${lastReason}</p>${report()}${logBtn}${go('to try again')}`;
   else if(kind==='pause')h=`<h2>Paused</h2>${CONTROLS}<div class="go">${isTouch?'Tap':'Press P'} to resume</div>${credit}`;
-  card.innerHTML=h;msg.classList.remove('hidden');
+  card.classList.remove('anim');card.innerHTML=h;msg.classList.remove('hidden');if(kind==='level')animateLoadout();
 }
 const logBtn='<p><button id="openlog" class="linkbtn">View flight log (L)</button></p>';
 function report(){if(!lastReport)return'';
   return`<div class="rep">${lastReport.map(([k,v,lim,ok])=>`<span>${k}</span><b class="${ok?'ok':'bad'}">${v}</b><span>${lim}</span><b class="${ok?'ok':'bad'}">${ok?'✓':'✗'}</b>`).join('')}</div>`;}
+
+// ---- level loadout: what you start the level with, animated against the last level ----
+let prevLoadout=null;
+function mapStatus(n){const sp=mapSpec(n);
+  if(!sp)return{label:'Offline',op:0};
+  if(!sp.fade)return{label:'Full',op:1};
+  if(sp.N>=31)return{label:'Fades near the pad',op:.7};
+  return{label:sp.N>=21?'Smaller area, fades near pad':'Smallest area, fades near pad',op:sp.N>=21?.5:.35};}
+function loadoutHTML(){
+  const p=prevLoadout,cur={fuel:maxFuel,rcs:rcsMax,refill:rcsMax/rcsRate};
+  const fMax=Math.max(cur.fuel,p?p.fuel:0)*1.08,rMax=3.2;
+  const pct=(v,m)=>(v/m*100).toFixed(1)+'%';
+  const bar=(v,m,pv,dl)=>`<span class="lb"><i style="--w:${pct(v,m)};transition-delay:${dl}s"></i>${pv!=null?`<u style="left:${pct(pv,m)}" title="last level"></u>`:''}</span>`;
+  const pk=peeksFor(level),ppk=p?peeksFor(level-1):pk;let pips='';
+  for(let i=0;i<Math.max(pk,ppk);i++)pips+=`<span class="${i<pk?'on':'lost'}" style="--d:${1.05+i*.12}s"></span>`;
+  const ms=mapStatus(level),pms=p?mapStatus(level-1):ms;
+  return`<div class="loadout">
+<span class="k">Fuel</span>${bar(cur.fuel,fMax,p&&p.fuel,.2)}<b class="cnt" data-to="${Math.round(cur.fuel)}">0</b>
+<span class="k">Damper</span>${bar(cur.rcs,rMax,p&&p.rcs,.6)}<b>${cur.rcs.toFixed(1)} s, refills in ${cur.refill.toFixed(1)} s</b>
+<span class="k">3D peeks</span><span class="pips">${pips}</span><b>${pk}${pk<ppk?' <em>(−'+(ppk-pk)+')</em>':''}</b>
+<span class="k">3D map</span><span class="mapsw"><i style="--from:${pms.op};--to:${ms.op}"></i>${ms.op===0?'<s></s>':''}</span><b>${ms.label}</b>
+</div><p class="lnote">Markers show last level.</p>`;
+}
+function animateLoadout(){
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{card.classList.add('anim');
+    const c=card.querySelector('.cnt');if(!c)return;const to=+c.dataset.to,t0=performance.now();
+    const step=t=>{const k=Math.min(1,(t-t0-200)/900);c.textContent=Math.round(to*Math.max(0,1-Math.pow(1-Math.max(k,0),3)));if(k<1)requestAnimationFrame(step);};
+    requestAnimationFrame(step);}));
+}
+
 function hideMsg(){msg.classList.add('hidden');}
 
 // ---- loop ----
-const qs=new URLSearchParams(location.search);if(qs.get('level'))level=Math.max(1,+qs.get('level')|0);
+// ---- saved progress (localStorage, private to this browser) ----
+const SAVE_KEY='lunar-lander-3d:save';
+function loadSave(){try{const v=localStorage.getItem(SAVE_KEY);return v?JSON.parse(v):null;}catch(e){return null;}}
+function writeSave(lv,sc){try{const old=loadSave()||{};
+  localStorage.setItem(SAVE_KEY,JSON.stringify({level:lv,score:sc,best:Math.max(sc,old.best||0)}));}catch(e){}}
+let saved=loadSave();
+function newGame(){level=1;score=0;prevLoadout=null;levelBlurb.bendShown=false;writeSave(1,0);saved=loadSave();
+  buildLevel(1);resetLander();state='ready';showMsg('intro');}
+const qs=new URLSearchParams(location.search);
+if(qs.get('level'))level=Math.max(1,+qs.get('level')|0);
+else if(saved&&saved.level>1){level=saved.level;score=saved.score||0;}
 buildLevel(level);resetLander();showMsg('intro');
 const STEP=1/120;let last=performance.now(),acc=0;
 function frame(t){
