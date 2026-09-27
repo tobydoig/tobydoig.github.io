@@ -43,6 +43,9 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .keys{display:grid;grid-template-columns:auto auto;gap:3px 18px;justify-content:center;text-align:left;margin:14px 0 6px;font-size:14px}
 .keys b{font-weight:400;color:var(--line)} .keys span{color:var(--dim)}
 .go{margin-top:14px;color:var(--pad)}
+.credit{margin:16px 0 0;font-size:13px}
+.credit a{color:var(--dim);text-decoration:none;border-bottom:1px solid rgba(106,122,163,.5)}
+.credit a:hover,.credit a:focus-visible{color:var(--line);border-color:var(--line)}
 .linkbtn{background:none;border:1px solid rgba(106,122,163,.6);color:var(--line);font:inherit;font-size:13px;padding:4px 10px;cursor:pointer}
 .linkbtn:hover,.linkbtn:focus-visible{border-color:var(--line)}
 #log{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 16px);background:rgba(3,5,11,.55)}
@@ -57,6 +60,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .rep span{color:var(--dim)} .rep b{font-weight:400}
 .touch-only{display:none}
 #touch{display:none}
+#peekbtn{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 56px);width:56px;height:40px;border-radius:20px;border:1px solid rgba(255,181,71,.6);background:rgba(20,28,52,.6);color:var(--pad);font:inherit;font-size:15px;touch-action:none}
 body.touch .touch-only{display:block}
 body.touch .desk-only{display:none}
 body.touch #touch{display:block}
@@ -75,6 +79,7 @@ body.touch #touch{display:block}
     <div class="row"><span class="k">Level</span><span id="lvl">1</span></div>
     <div class="row"><span class="k">Fuel</span><span class="bar"><i id="fuel"></i></span></div>
     <div class="row"><span class="k">Damper</span><span class="bar"><i id="rcs"></i></span></div>
+    <div class="row"><span class="k">3D peek</span><span id="pk">0</span></div>
     <div class="row"><span class="k">Score</span><span id="score">0</span></div>
   </div>
   <div class="hud" id="hr">
@@ -91,6 +96,7 @@ body.touch #touch{display:block}
     <textarea id="logtext" readonly spellcheck="false"></textarea>
   </div></div>
   <div id="touch">
+    <button id="peekbtn" aria-label="3D peek">3D</button>
     <div class="tg l"><button data-k="yl" aria-label="Rotate view left">⟲</button><button data-k="yr" aria-label="Rotate view right">⟳</button><button data-k="brake" aria-label="Drift damper" style="font-size:13px">damp</button></div>
     <div class="tg r"><button data-k="boost" aria-label="Boost">⇧</button><button data-k="tl" aria-label="Tilt left">◀</button><button data-k="thrust" aria-label="Thrust">▲</button><button data-k="tr" aria-label="Tilt right">▶</button></div>
   </div>
@@ -230,9 +236,10 @@ addPerim(HULL_LINES,false);addPerim(FOOT_LINES,true);
 // ---- state ----
 const L={x:0,y:0,z:0,vx:0,vy:0,vz:0,tilt:0,heading:0};
 let fuel=0,state='ready',paused=false,ghosts=true,thrusting=false,boosting=false,braking=false,yawing=0;
+function showToast(t,d=1.6){document.getElementById('toast').textContent=t;toastT=d;}
 let parts=[],debris=[],padSeen=false,toastT=0,lastReason='',lastPts=0;
 const cam={zf:0,near:false};let warn=false;
-function resetLander(){cam.near=false;L.x=START.x;L.y=START.y;L.z=Math.min(START.f+140,T.CEIL-30);L.vx=L.vy=L.vz=0;L.tilt=0;
+function resetLander(){cam.near=false;peek=null;peeksLeft=peeksFor(level);L.x=START.x;L.y=START.y;L.z=Math.min(START.f+140,T.CEIL-30);L.vx=L.vy=L.vz=0;L.tilt=0;
   L.heading=START_HEADING;fuel=maxFuel;rcs=rcsMax;rcsWait=0;parts=[];debris=[];padSeen=false;cam.zf=0;}
 
 function toWorld(lx,ly){const c=Math.cos(L.tilt),s=Math.sin(L.tilt),ry=ly-5;return[lx*c+ry*s,-lx*s+ry*c+5];}
@@ -257,13 +264,15 @@ addEventListener('keydown',e=>{
   if(e.repeat)return;
   if(e.key===' '||e.key==='Enter')advance();
   if(e.key==='g'||e.key==='G')ghosts=!ghosts;
-  if((e.key==='v'||e.key==='V')&&mapAvailable())mapOn=!mapOn;
+  if(e.key==='c'||e.key==='C')startPeek();
+  if((e.key==='v'||e.key==='V')&&mapAvailable()){mapOn=!mapOn;showToast(mapOn?'3D map on':'3D map hidden (V to show)',2);logEv(mapOn?'3D map shown':'3D map hidden');}
   if(e.key==='m'||e.key==='M')muted=!muted;
   if(e.key==='r'||e.key==='R'){if(state==='flying')logEv('restarted');resetLander();state='flying';paused=false;hideMsg();logStart();}
-  if((e.key==='p'||e.key==='P'||e.key==='Escape')&&state==='flying'){paused=!paused;paused?showMsg('pause'):hideMsg();}
+  if((e.key==='p'||e.key==='P'||e.key==='Escape')&&state==='flying'&&!peek){paused=!paused;paused?showMsg('pause'):hideMsg();}
 });
 addEventListener('keyup',e=>{if(KEYMAP[e.key])keys[KEYMAP[e.key]]=false;});
 addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
+document.getElementById('peekbtn').addEventListener('pointerdown',e=>{e.preventDefault();initAudio();startPeek();});
 document.querySelectorAll('#touch button').forEach(b=>{
   const k=b.dataset.k;
   const on=e=>{e.preventDefault();initAudio();keys[k]=true;b.classList.add('on');};
@@ -271,7 +280,7 @@ document.querySelectorAll('#touch button').forEach(b=>{
   b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);
   b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off);
 });
-document.getElementById('msg').addEventListener('pointerdown',e=>{if(e.target.closest('#openlog')){e.stopPropagation();toggleLog();return;}initAudio();advance();});
+document.getElementById('msg').addEventListener('pointerdown',e=>{if(e.target.closest('a'))return;if(e.target.closest('#openlog')){e.stopPropagation();toggleLog();return;}initAudio();advance();});
 
 function advance(){
   if(paused){paused=false;hideMsg();return;}
@@ -485,7 +494,7 @@ function render(dt){
       ctx.fillStyle='#ffb547';ctx.beginPath();ctx.moveTo(edge+dir*8,yy);ctx.lineTo(edge-dir*4,yy-7);ctx.lineTo(edge-dir*4,yy+7);ctx.fill();
       ctx.textAlign=dir<0?'left':'right';ctx.fillText(`pad ${Math.round(Math.abs(pa))} m`,edge-dir*10,yy+22);ctx.textAlign='left';}
   }
-  if(inView&&!padSeen&&state==='flying'){toastT=1.6;logEv('pad came into view');}
+  if(inView&&!padSeen&&state==='flying'){showToast('Pad in view');logEv('pad came into view');}
   if(state==='flying'&&warn!==lastWarn){lastWarn=warn;logEv(warn?'proximity warning on':'proximity warning off');}
   padSeen=inView;
   toastT-=dt;document.getElementById('toast').style.opacity=toastT>0?1:0;
@@ -557,7 +566,12 @@ const G3={key:null,N:31,st:16,h:new Float32Array(31*31),roof:new Uint8Array(31*3
 function mapAvailable(){return level<=MAP_LAST;}
 function draw3D(dx,dy,nx,ny){
   const spec=mapSpec(level);
-  if(!spec||!mapOn)return;
+  if(!spec)return;
+  if(!mapOn){ // collapsed placeholder so a hidden map is obvious and easy to bring back
+    const bw=isTouch?120:190,bx=18,by=isTouch?Math.round(Math.max(96,Hc*.13)):Hc-44;
+    ctx.fillStyle='rgba(7,10,20,.7)';ctx.fillRect(bx,by,bw,26);ctx.strokeStyle='rgba(106,122,163,.5)';ctx.lineWidth=1;ctx.strokeRect(bx+.5,by+.5,bw-1,25);
+    ctx.fillStyle='rgba(150,165,205,.95)';ctx.font='11px "Share Tech Mono",monospace';ctx.textAlign='left';
+    ctx.fillText(isTouch?'3D map hidden':'3D map hidden (V to show)',bx+8,by+17);return;}
   const N=spec.N,st=G3.st,half=(N-1)/2*st,top=T.CEIL+12;
   const padD=Math.hypot(L.x-PAD.x,L.y-PAD.y),A=spec.fade?clamp((padD-60)/90,0,1):1;
   const ox=Math.round(L.x/st)*st-half,oy=Math.round(L.y/st)*st-half,key=ox+','+oy+','+level;
@@ -641,6 +655,134 @@ function draw3D(dx,dy,nx,ny){
   if(A<1){ctx.fillStyle=`rgba(255,181,71,${(1-A)*.9})`;ctx.fillText('fading near the pad',px+8,py+ph-9);}
 }
 
+
+// ---- 3D peek ----
+// Press C: time freezes and the slice view morphs into a 3D view of the terrain
+// around you (camera pulls back and tilts up), holds, then morphs back. At the
+// start of the morph the 3D camera is effectively orthographic and face-on, so
+// it matches the 2D view exactly. Limited uses per attempt.
+let peek=null,peeksLeft=0;
+const PK={IN:.9,HOLD:3,OUT:.9,N:51,ST:16};
+function peeksFor(n){return Math.max(2,6-n);}
+function startPeek(){
+  if(peek){if(peek.phase!=='out'){peek.phase='out';peek.timer=0;}return;}
+  if(state!=='flying'||paused||peeksLeft<=0)return;
+  peeksLeft--;logEv(`3D peek (${peeksLeft} left)`);
+  const N=PK.N,st=PK.ST,half=(N-1)/2*st,ox=L.x-half,oy=L.y-half;
+  const H=new Float32Array(N*N),RF=new Uint8Array(N*N);
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){H[i*N+j]=sample(ox+i*st,oy+j*st);RF[i*N+j]=S.R!==Infinity?1:0;}
+  peek={phase:'in',timer:0,t:0,N,st,ox,oy,H,RF,scale0:scale,cy0:cy,off:0};
+  peekSlice();
+  thrusting=boosting=braking=false;yawing=0;
+}
+// sample the slice for the current heading
+function peekSlice(){
+  const p=peek,dx=Math.cos(L.heading),dy=Math.sin(L.heading);
+  p.dx=dx;p.dy=dy;p.nx=-dy;p.ny=dx;
+  const span=Math.max(W/2/p.scale0+6,(p.N-1)/2*p.st),sst=3,n=Math.ceil(2*span/sst)+1;
+  const sl=p.sl&&p.sl.n===n?p.sl:{n,s:new Float32Array(n),F:new Float32Array(n),R:new Float32Array(n),M:new Float32Array(n)};
+  for(let i=0;i<n;i++){const v=-span+i*sst;sl.s[i]=v;sample(L.x+dx*v,L.y+dy*v);sl.F[i]=S.F;sl.R[i]=S.R;sl.M[i]=S.M;}
+  p.sl=sl;
+}
+function updatePeek(dt){
+  const p=peek;
+  // rotate keys orbit the camera around the lander; the lander's heading (and slice) don't
+  // change, and the morph back to 2D swings the camera home to the real slice
+  const yaw=(keys.yr?1:0)-(keys.yl?1:0);let orbiting=false;
+  if(yaw&&p.phase!=='out'){p.off+=yaw*1.6*dt;orbiting=true;}
+  if(!(orbiting&&p.phase==='hold'))p.timer+=dt;
+  if(p.phase==='in'){p.t=Math.min(1,p.timer/PK.IN);if(p.t>=1){p.phase='hold';p.timer=0;}}
+  else if(p.phase==='hold'){p.t=1;if(p.timer>=PK.HOLD){p.phase='out';p.timer=0;}}
+  else{p.t=Math.max(0,1-p.timer/PK.OUT);if(p.t<=0)peek=null;}
+}
+function renderPeek(){
+  const p=peek,{dx,dy,nx,ny}=p,N=p.N,st=p.st;
+  const e=p.t*p.t*(3-2*p.t),top=T.CEIL+12;
+  const D=Math.exp(Math.log(20000)+(Math.log(950)-Math.log(20000))*e);
+  const el=0.9*e,scale1=Math.min(W,Hc*1.5)/950,sc=p.scale0+(scale1-p.scale0)*e,foc=sc*D;
+  const Tz=p.cy0+(Math.min(L.z,T.CEIL)*.5+30-p.cy0)*e;
+  // camera yaw = slice heading + orbit offset; the offset eases to zero as the view morphs back
+  const cyaw=L.heading+p.off*e,cdx=Math.cos(cyaw),cdy=Math.sin(cyaw),cnx=-cdy,cny=cdx;
+  const fx=cnx*Math.cos(el),fy=cny*Math.cos(el),fz=-Math.sin(el);
+  const Cx=L.x-D*fx,Cy=L.y-D*fy,Cz=Tz-D*fz;
+  const ux=cdy*fz,uy=-cdx*fz,uz=cdx*fy-cdy*fx;
+  const camSide=(Cx-L.x)*nx+(Cy-L.y)*ny;
+  const hd=h=>h+(Math.min(h,top)-h)*e;
+  const P=(x,y,z)=>{const vx=x-Cx,vy=y-Cy,vz=z-Cz,zc=vx*fx+vy*fy+vz*fz;
+    return[W/2+(vx*cdx+vy*cdy)/zc*foc,Hc/2-(vx*ux+vy*uy+vz*uz)/zc*foc,zc];};
+  const Q=(s,z)=>P(L.x+dx*s,L.y+dy*s,z);
+  ctx.fillStyle='#070a14';ctx.fillRect(0,0,W,Hc);
+  if(e<1){const span=W*3.2;for(const s of STARS){const x=(((s.a-L.heading)%TAU+TAU)%TAU)/TAU*span;if(x>W)continue;
+    ctx.fillStyle=`rgba(210,222,255,${s.b*(1-e)})`;ctx.fillRect(x,s.y*Hc,s.r,s.r);}}
+  const sl=p.sl;
+  // the 2D view's solid fill under the slice line, fading out as the 3D terrain fades in
+  if(e<.98){ctx.globalAlpha=1-e;const g0=Q(sl.s[0],0);ctx.beginPath();ctx.moveTo(g0[0],g0[1]);
+    for(let i=0;i<sl.n;i++){const q=Q(sl.s[i],hd(sl.F[i]));ctx.lineTo(q[0],q[1]);}
+    const g1=Q(sl.s[sl.n-1],0);ctx.lineTo(g1[0],g1[1]);ctx.closePath();ctx.fillStyle='#141c36';ctx.fill();ctx.globalAlpha=1;}
+  // terrain mesh
+  const V=new Array(N*N);for(let i=0;i<N;i++)for(let j=0;j<N;j++)V[i*N+j]=P(p.ox+i*st,p.oy+j*st,hd(p.H[i*N+j]));
+  const back=[],front=[];
+  for(let i=0;i<N-1;i++)for(let j=0;j<N-1;j++){
+    const a=i*N+j,b=(i+1)*N+j,c=(i+1)*N+j+1,d=i*N+j+1,va=V[a],vb=V[b],vc=V[c],vd=V[d];
+    if(va[2]<5||vb[2]<5||vc[2]<5||vd[2]<5)continue;
+    const ha=hd(p.H[a]),hb=hd(p.H[b]),hc=hd(p.H[c]),hdd=hd(p.H[d]);
+    const gx=(ha+hdd-hb-hc)/(2*st),gy=(ha+hb-hdd-hc)/(2*st),nl=Math.hypot(gx,gy,1),lam=Math.max(0,(gx*-.45+gy*-.35+.82)/nl);
+    const t=clamp((top-(ha+hb+hc+hdd)/4)/(top-40),0,1),tt=t*t,l=.35+.75*lam;
+    let r=24+80*tt,g=30+112*tt,bl=54+150*tt;if(p.RF[a]&p.RF[c]){r=86;g=60;bl=150;}
+    const mx=p.ox+i*st+st/2-L.x,my=p.oy+j*st+st/2-L.y;
+    ((mx*nx+my*ny)*camSide<0?back:front).push({v:[va,vb,vc,vd],z:(va[2]+vc[2])/2,col:`rgb(${r*l|0},${g*l|0},${bl*l|0})`});
+  }
+  const mA=clamp(e*1.7-.1,0,1);
+  const drawQ=arr=>{arr.sort((u,w)=>w.z-u.z);ctx.lineWidth=.6;ctx.strokeStyle='rgba(200,215,255,.08)';
+    for(const q of arr){ctx.beginPath();ctx.moveTo(q.v[0][0],q.v[0][1]);for(let k=1;k<4;k++)ctx.lineTo(q.v[k][0],q.v[k][1]);
+      ctx.closePath();ctx.fillStyle=q.col;ctx.fill();ctx.stroke();}};
+  if(mA>0){ctx.globalAlpha=mA;drawQ(back);
+    const span=(N-1)/2*st,c1=Q(-span,0),c2=Q(span,0),c3=Q(span,top),c4=Q(-span,top);
+    ctx.beginPath();ctx.moveTo(c1[0],c1[1]);ctx.lineTo(c2[0],c2[1]);ctx.lineTo(c3[0],c3[1]);ctx.lineTo(c4[0],c4[1]);ctx.closePath();
+    ctx.fillStyle='rgba(223,232,255,.07)';ctx.fill();ctx.strokeStyle='rgba(223,232,255,.3)';ctx.lineWidth=1;ctx.stroke();
+    ctx.globalAlpha=mA*.85;drawQ(front);ctx.globalAlpha=1;}
+  // ceiling on the plane
+  ctx.save();ctx.setLineDash([6,8]);ctx.strokeStyle=`rgba(106,122,163,${.55*(1-e*.6)})`;ctx.lineWidth=1;
+  const k1=Q(-W/2/p.scale0,T.CEIL),k2=Q(W/2/p.scale0,T.CEIL);ctx.beginPath();ctx.moveTo(k1[0],k1[1]);ctx.lineTo(k2[0],k2[1]);ctx.stroke();ctx.restore();
+  // the slice line itself, always on top: this is what the 2D view shows
+  ctx.save();ctx.shadowColor='rgba(170,195,255,.7)';ctx.shadowBlur=7;ctx.strokeStyle='#dfe8ff';ctx.lineWidth=1.6;ctx.lineJoin='round';
+  ctx.beginPath();let pen=false;
+  for(let i=0;i<sl.n;i++){const q=Q(sl.s[i],hd(sl.F[i]));
+    const jump=i>0&&Math.abs(sl.F[i]-sl.F[i-1])>40&&(sl.R[i]<sl.M[i]||sl.R[i-1]<sl.M[i-1]);
+    if(!pen||jump){ctx.moveTo(q[0],q[1]);pen=true;}else ctx.lineTo(q[0],q[1]);}
+  let on=false;for(let i=0;i<sl.n;i++){const r=sl.R[i]<sl.M[i]-.3;
+    if(r){const q=Q(sl.s[i],hd(sl.R[i]));on?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}on=r;}
+  ctx.stroke();ctx.restore();
+  // pad
+  ctx.globalAlpha=Math.max(e,.0);ctx.strokeStyle='#ffb547';ctx.fillStyle='#ffb547';ctx.lineWidth=2.5;ctx.beginPath();
+  for(let k=0;k<=24;k++){const a=k/24*TAU,q=P(PAD.x+Math.cos(a)*PADR,PAD.y+Math.sin(a)*PADR,PAD.h);k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
+  ctx.stroke();
+  const b0=P(PAD.x,PAD.y,PAD.h),b1=P(PAD.x,PAD.y,top);
+  if(b0[2]>5){ctx.save();ctx.setLineDash([4,5]);ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(b0[0],b0[1]);ctx.lineTo(b1[0],b1[1]);ctx.stroke();ctx.restore();}
+  ctx.globalAlpha=1;
+  // lander: shadow, motion arrow, and the lander drawn at its projected size
+  sample(L.x,L.y);const g0=P(L.x,L.y,hd(S.F)),l0=P(L.x,L.y,L.z+5),k=foc/l0[2];
+  ctx.globalAlpha=e;ctx.strokeStyle='rgba(223,232,255,.6)';ctx.lineWidth=1;ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(l0[0],l0[1]);ctx.lineTo(g0[0],g0[1]);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='rgba(223,232,255,.45)';ctx.beginPath();ctx.ellipse(g0[0],g0[1],Math.max(4,8*k),Math.max(2,3*k),0,0,TAU);ctx.fill();
+  if(Math.hypot(L.vx,L.vy,L.vz)>.3){const v1=P(L.x+L.vx*6,L.y+L.vy*6,L.z+5+L.vz*6);
+    ctx.strokeStyle='#7fe3c4';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(l0[0],l0[1]);ctx.lineTo(v1[0],v1[1]);ctx.stroke();
+    const va=Math.atan2(v1[1]-l0[1],v1[0]-l0[0]);ctx.beginPath();ctx.moveTo(v1[0],v1[1]);
+    ctx.lineTo(v1[0]-8*Math.cos(va-.5),v1[1]-8*Math.sin(va-.5));ctx.moveTo(v1[0],v1[1]);ctx.lineTo(v1[0]-8*Math.cos(va+.5),v1[1]-8*Math.sin(va+.5));ctx.stroke();}
+  ctx.globalAlpha=1;
+  const ks=Math.max(k,1.2);
+  ctx.save();ctx.translate(l0[0],l0[1]);ctx.rotate(L.tilt);ctx.scale(ks,ks);
+  ctx.strokeStyle='#dfe8ff';ctx.lineWidth=1.3/ks;ctx.lineJoin='round';ctx.shadowColor='rgba(170,195,255,.8)';ctx.shadowBlur=6;
+  const poly=arr=>{ctx.beginPath();arr.forEach(([x,y],i)=>{i?ctx.lineTo(x,-(y-5)):ctx.moveTo(x,-(y-5));});ctx.stroke();};
+  HULL_LINES.forEach(poly);FOOT_LINES.forEach(poly);DECOR_LINES.forEach(poly);ctx.restore();
+  // caption
+  ctx.globalAlpha=Math.min(1,e*1.5);ctx.textAlign='center';ctx.font='15px "Share Tech Mono",monospace';ctx.fillStyle='#ffb547';
+  ctx.fillText('3D view (time frozen)',W/2,Math.max(40,Hc*.07));
+  ctx.font='12px "Share Tech Mono",monospace';ctx.fillStyle='rgba(150,165,205,.95)';
+  ctx.fillText(`${isTouch?'⟲ ⟳ to look around, tap 3D':'A/D to look around, C'} to return, ${peeksLeft} peek${peeksLeft===1?'':'s'} left`,W/2,Math.max(40,Hc*.07)+20);
+  ctx.textAlign='left';ctx.globalAlpha=1;
+}
+
 // ---- HUD ----
 const $=id=>document.getElementById(id);
 function hud(){
@@ -656,6 +798,7 @@ function hud(){
   $('hs').innerHTML=`<span class="${hOK?'ok':'bad'}">${va<0?'◀ ':''}${Math.abs(va).toFixed(1)}${va>0?' ▶':''}</span>`;
   $('vs').innerHTML=`<span class="${L.vz>=-T.SAFE_VZ?'ok':'bad'}">${L.vz<0?'▼ ':'▲ '}${Math.abs(L.vz).toFixed(1)}</span>`;
   const td=L.tilt*57.3,tOK=Math.abs(L.tilt)<=T.SAFE_TILT;
+  $('pk').textContent=peeksLeft>0?`${peeksLeft} left`:'none left';$('pk').className=peeksLeft>0?'':'bad';
   $('tl').innerHTML=`<span class="${tOK?'ok':'bad'}">${Math.abs(td)<.5?'level':(td<0?'◀ ':'')+Math.abs(td).toFixed(0)+'°'+(td>0?' ▶':'')}</span>`;
   $('dr').innerHTML=`<span class="${hOK?'ok':'bad'}">${Math.abs(vn)<.05?'':vn>0?'away ':'toward '}${Math.abs(vn).toFixed(1)}</span>`;
 }
@@ -710,8 +853,9 @@ const CONTROLS=`<div class="keys desk-only">
 <b>Shift + thrust</b><span>boost (burns fuel fast)</span>
 <b>S  (or X)</b><span>drift damper: cancel drift into/out of the screen (short bursts, refills from fuel)</span>
 <b>A D  (or Q E)</b><span>rotate the view</span><b>V</b><span>toggle 3D map (levels 1–7)</span><b>G</b><span>toggle depth ghosts</span>
-<b>R  /  P  /  M</b><span>restart, pause, mute</span><b>L</b><span>flight log</span></div>
+<b>C</b><span>3D peek: freeze time and see the world in 3D (a few per attempt)</span><b>R  /  P  /  M</b><span>restart, pause, mute</span><b>L</b><span>flight log</span></div>
 <p class="touch-only">Left buttons rotate the view and damp drift. Right buttons tilt and thrust; hold ⇧ with thrust to boost.</p>`;
+const credit='<p class="credit"><a href="https://tobyandzuzka.com" target="_blank" rel="noopener">tobyandzuzka.com</a></p>';
 const go=t=>`<div class="go">${isTouch?'Tap':'Press Space'} ${t}</div>`;
 function levelBlurb(){
   const n=level,out=[];
@@ -734,11 +878,11 @@ function showMsg(kind){
 <p>The moon is three-dimensional. Your screen is a single vertical slice through it, centred on your lander. Rotate the view to find the way to the amber pad; the compass needle always points to it.</p>
 <p>Only what’s on screen can hit you, but rotating can swing rock into you.</p>
 ${CONTROLS}<p>Land with under ${T.SAFE_VZ} m/s down, under ${T.SAFE_H} m/s sideways (including drift), and nearly upright.</p>
-${levelBlurb()}${go('to launch')}`;
+${levelBlurb()}${go('to launch')}${credit}`;
   else if(kind==='level')h=`<h2>Level ${level}</h2>${levelBlurb()}${go('to launch')}`;
   else if(kind==='landed')h=`<h2>The Eagle has landed</h2><p>+${lastPts} points, with ${Math.round(fuel)} fuel to spare.</p>${report()}${logBtn}${go('for level '+(level+1))}`;
   else if(kind==='crashed')h=`<h2>Lander lost</h2><p>${lastReason}</p>${report()}${logBtn}${go('to try again')}`;
-  else if(kind==='pause')h=`<h2>Paused</h2>${CONTROLS}<div class="go">${isTouch?'Tap':'Press P'} to resume</div>`;
+  else if(kind==='pause')h=`<h2>Paused</h2>${CONTROLS}<div class="go">${isTouch?'Tap':'Press P'} to resume</div>${credit}`;
   card.innerHTML=h;msg.classList.remove('hidden');
 }
 const logBtn='<p><button id="openlog" class="linkbtn">View flight log (L)</button></p>';
@@ -752,11 +896,12 @@ buildLevel(level);resetLander();showMsg('intro');
 const STEP=1/120;let last=performance.now(),acc=0;
 function frame(t){
   const dt=Math.min(.05,(t-last)/1000);last=t;
-  if(!paused){acc+=dt;while(acc>=STEP){update(STEP);acc-=STEP;}}
+  if(peek){updatePeek(dt);acc=0;}
+  else if(!paused){acc+=dt;while(acc>=STEP){update(STEP);acc-=STEP;}}
   if(AC&&thrG){const on=!muted&&!paused;
     thrG.gain.setTargetAtTime(on&&thrusting?(boosting?.28:.16):0,AC.currentTime,.04);
     rcsG.gain.setTargetAtTime(on&&(yawing||braking)?(braking?.06:.03):0,AC.currentTime,.05);}
-  render(paused?0:dt);hud();requestAnimationFrame(frame);
+  if(peek)renderPeek();else render(paused?0:dt);hud();requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 })();
