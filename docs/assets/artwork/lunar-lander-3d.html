@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lunar Lander 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --space:#070a14; --line:#dfe8ff; --dim:#6a7aa3; --pad:#ffb547; --ok:#7fe3c4; --warn:#ff6b5a;
+  --panel:rgba(7,10,20,.78);
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --space:#070a14; --line:#dfe8ff; } }
+:root[data-theme="dark"]{ --space:#070a14; --line:#dfe8ff; }
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;height:100%;background:var(--space);color:var(--line);
+  font-family:'Share Tech Mono',ui-monospace,Menlo,Consolas,monospace;overflow:hidden;
+  touch-action:none;user-select:none;-webkit-user-select:none}
+#wrap{position:fixed;inset:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hud{position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);font-size:14px;line-height:1.6;
+  pointer-events:none;text-shadow:0 0 6px rgba(150,180,255,.35)}
+#hl{left:18px}
+#hr{right:18px;text-align:right}
+.row .k{color:var(--dim);margin-right:.7em}
+.bar{display:inline-block;width:110px;height:7px;border:1px solid var(--dim);vertical-align:middle;position:relative}
+.bar i{position:absolute;left:1px;top:1px;bottom:1px;background:var(--line);width:0}
+.ok{color:var(--ok)} .bad{color:var(--warn)}
+#toast{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 18px);transform:translateX(-50%);
+  color:var(--pad);font-size:15px;opacity:0;transition:opacity .25s;pointer-events:none;text-shadow:0 0 8px rgba(255,181,71,.5)}
+#msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px}
+#msg.hidden{display:none}
+.card{text-align:center;max-width:36em;padding:26px 30px 22px;background:var(--panel);border:1px solid rgba(106,122,163,.45)}
+.card h1{position:relative;font-weight:400;font-size:clamp(22px,5.5vw,42px);letter-spacing:.16em;white-space:nowrap;margin:0 0 .35em;padding-left:.2em;line-height:1.1}
+.card h1::after{content:"";position:absolute;left:-6%;right:-6%;top:56%;height:1px;background:var(--pad);box-shadow:0 0 8px var(--pad)}
+.card h2{font-weight:400;font-size:24px;margin:0 0 .5em;letter-spacing:.06em}
+.card p{margin:.4em 0;line-height:1.5;color:#b9c5e6}
+.keys{display:grid;grid-template-columns:auto auto;gap:3px 18px;justify-content:center;text-align:left;margin:14px 0 6px;font-size:14px}
+.keys b{font-weight:400;color:var(--line)} .keys span{color:var(--dim)}
+.go{margin-top:14px;color:var(--pad)}
+.linkbtn{background:none;border:1px solid rgba(106,122,163,.6);color:var(--line);font:inherit;font-size:13px;padding:4px 10px;cursor:pointer}
+.linkbtn:hover,.linkbtn:focus-visible{border-color:var(--line)}
+#log{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 16px);background:rgba(3,5,11,.55)}
+#log.hidden{display:none}
+.logcard{display:flex;flex-direction:column;width:min(1000px,100%);height:min(640px,100%);background:var(--panel);border:1px solid rgba(106,122,163,.55)}
+.logbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid rgba(106,122,163,.35)}
+.logbar .sp{flex:1}
+.logbar button{background:none;border:1px solid rgba(106,122,163,.6);color:var(--line);font:inherit;font-size:13px;padding:4px 12px;cursor:pointer}
+.logbar button:hover,.logbar button:focus-visible{border-color:var(--line)}
+#logtext{flex:1;resize:none;background:transparent;border:0;color:#c9d4f0;font:12px/1.5 'Share Tech Mono',ui-monospace,Menlo,Consolas,monospace;padding:10px 12px;white-space:pre;overflow:auto;user-select:text;-webkit-user-select:text}
+.rep{display:grid;grid-template-columns:auto auto auto auto;gap:3px 16px;justify-content:center;text-align:left;margin:12px 0 4px;font-size:14px}
+.rep span{color:var(--dim)} .rep b{font-weight:400}
+.touch-only{display:none}
+#touch{display:none}
+body.touch .touch-only{display:block}
+body.touch .desk-only{display:none}
+body.touch #touch{display:block}
+.tg{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);display:flex;gap:10px}
+.tg.l{left:16px} .tg.r{right:16px}
+.tg button{width:62px;height:62px;border-radius:50%;border:1px solid rgba(106,122,163,.6);background:rgba(20,28,52,.55);
+  color:var(--line);font:inherit;font-size:22px;touch-action:none}
+.tg button.on{background:rgba(223,232,255,.18);border-color:var(--line)}
+@media (max-width:560px){ .hud{font-size:12px} .bar{width:80px} .tg{gap:7px} .tg button{width:50px;height:50px;font-size:19px} }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div class="hud" id="hl">
+    <div class="row"><span class="k">Level</span><span id="lvl">1</span></div>
+    <div class="row"><span class="k">Fuel</span><span class="bar"><i id="fuel"></i></span></div>
+    <div class="row"><span class="k">Damper</span><span class="bar"><i id="rcs"></i></span></div>
+    <div class="row"><span class="k">Score</span><span id="score">0</span></div>
+  </div>
+  <div class="hud" id="hr">
+    <div class="row"><span class="k">Altitude</span><span id="alt">0</span></div>
+    <div class="row"><span class="k">Across</span><span id="hs">0</span></div>
+    <div class="row"><span class="k">Vertical</span><span id="vs">0</span></div>
+    <div class="row"><span class="k">Drift</span><span id="dr">0</span></div>
+    <div class="row"><span class="k">Tilt</span><span id="tl">level</span></div>
+  </div>
+  <div id="toast">Pad in view</div>
+  <div id="msg"><div class="card" id="card"></div></div>
+  <div id="log" class="hidden"><div class="logcard">
+    <div class="logbar"><span>Flight log</span><span class="sp"></span><button id="logcopy">Copy</button><button id="logclose">Close</button></div>
+    <textarea id="logtext" readonly spellcheck="false"></textarea>
+  </div></div>
+  <div id="touch">
+    <div class="tg l"><button data-k="yl" aria-label="Rotate view left">⟲</button><button data-k="yr" aria-label="Rotate view right">⟳</button><button data-k="brake" aria-label="Drift damper" style="font-size:13px">damp</button></div>
+    <div class="tg r"><button data-k="boost" aria-label="Boost">⇧</button><button data-k="tl" aria-label="Tilt left">◀</button><button data-k="thrust" aria-label="Thrust">▲</button><button data-k="tr" aria-label="Tilt right">▶</button></div>
+  </div>
+</div>
+<script>
+(()=>{
+const TAU=Math.PI*2;
+// ---- tuning ----
+const T={G:1.9,THRUST:5.0,TILT_RATE:2.2,YAW_RATE:1.05,BURN:8,CEIL:330,
+  SAFE_VZ:3.0,SAFE_H:2.0,SAFE_TILT:0.19,GHOST_OFF:24,BOOST:1.8,BOOST_BURN:2.5,BRAKE:3.5,BRAKE_BURN:4,RCS_FUEL:8,RCS_DELAY:0.6};
+const SL=48,PADR=16;
+// the camera frames the ground up to a little above the ceiling; unreachable peaks run off the top
+const MTN_BASE=300,MTN_AMP=300,VIEW_H=450;
+let HW=26;
+
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W=0,Hc=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;Hc=innerHeight;
+  cv.width=W*DPR;cv.height=Hc*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+if(isTouch)document.body.classList.add('touch');
+
+// ---- noise ----
+let SEED=1;
+function hash(i,j){let h=(Math.imul(i,374761393)+Math.imul(j,668265263)+SEED)|0;
+  h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;return(h>>>0)/4294967296;}
+function vnoise(x,y){const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi;
+  const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+  const a=hash(xi,yi),b=hash(xi+1,yi),c=hash(xi,yi+1),d=hash(xi+1,yi+1);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;}
+function fbm(x,y){let s=0,a=.5,f=1,n=0;for(let o=0;o<4;o++){s+=a*vnoise(x*f,y*f);n+=a;a*=.5;f*=2.03;}return s/n;}
+function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+
+// ---- level design ----
+// Difficulty ramps: more bends, dead ends, then tunnels (Scramble-style), then
+// bending tunnels, narrower passages and wavier floors and roofs.
+function levelSpec(n){
+  const segs=Math.min(1+n,8);
+  return{n,segs,
+    turn:0.35+Math.min(n,7)*0.12,
+    branches:n<2?0:Math.min(1+Math.floor((n-2)/2),3),
+    tunnels:n<3?0:Math.min(n-2,segs-2),
+    clear:Math.max(34,72-6*(n-3)),
+    hw:Math.max(16,28-2*n),
+    wob:clamp((n-2)*0.18,0,1)};
+}
+let rcs=0,rcsMax=3,rcsRate=.5,rcsWait=0;
+let LV,SEGS=[],PAD,START,START_HEADING,maxFuel,level=1,score=0;
+function buildLevel(n){
+  LV=levelSpec(n);HW=LV.hw;
+  SEED=Math.imul(n,2654435761)|0;
+  const rng=mulberry32(n*9973+17);
+  const mids=[];for(let i=1;i<=LV.segs-2;i++)mids.push(i);
+  for(let i=mids.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[mids[i],mids[j]]=[mids[j],mids[i]];}
+  const tun=new Set(mids.slice(0,LV.tunnels));
+  LV.bend=[...tun].some(i=>tun.has(i+1));
+  let ang=rng()*TAU;
+  const main=[{x:0,y:0,f:60+rng()*30}];let p=main[0],len=0;const raw=[];
+  for(let i=0;i<LV.segs;i++){
+    if(i>0)ang+=(rng()<.5?-1:1)*LV.turn*(0.6+rng()*0.8);
+    const t=tun.has(i),l=t?260+rng()*120:180+rng()*130;len+=l;
+    const q={x:p.x+Math.cos(ang)*l,y:p.y+Math.sin(ang)*l,f:clamp(p.f+(rng()-.5)*(40+LV.wob*60),40,130)};
+    raw.push({a:p,b:q,tun:t,i});main.push(q);p=q;
+  }
+  for(let b=0;b<LV.branches;b++){
+    const k=1+Math.floor(rng()*(LV.segs-1));
+    let bp=main[k];
+    let a2=Math.atan2(main[k+1].y-bp.y,main[k+1].x-bp.x)+(rng()<.5?-1:1)*(0.9+rng()*0.7);
+    // a branch leaving from inside a tunnel is a side tunnel
+    const m=1+Math.floor(rng()*2),bt=(n>=5&&rng()<.45)||tun.has(k-1)||tun.has(k);
+    for(let j=0;j<m;j++){const l=110+rng()*130;
+      const nq={x:bp.x+Math.cos(a2)*l,y:bp.y+Math.sin(a2)*l,f:clamp(bp.f+(rng()-.5)*50,40,130)};
+      raw.push({a:bp,b:nq,tun:bt,br:j,k});bp=nq;a2+=(rng()-.5)*1.2;}
+  }
+  // An open canyon that meets a tunnel ends in a flat cliff face (no rounded cap),
+  // so the tunnel mouth is a clean opening in the rock.
+  const T_=i=>tun.has(i);
+  SEGS=raw.map(({a,b,tun:t,i,br,k})=>{const dx=b.x-a.x,dy=b.y-a.y;let capA=true,capB=true;
+    if(!t){if(i!==undefined){capA=!(i>0&&T_(i-1));capB=!T_(i+1);}
+      else if(br===0)capA=!(T_(k-1)||T_(k));}
+    return{ax:a.x,ay:a.y,dx,dy,l2:dx*dx+dy*dy,fa:a.f,fb:b.f,tun:t,capA,capB,clear:LV.clear};});
+  PAD={x:p.x,y:p.y,h:p.f};START=main[0];
+  const first=Math.atan2(main[1].y-main[0].y,main[1].x-main[0].x);
+  START_HEADING=n<=2?first:first+(rng()<.5?-1:1)*(0.7+rng()*0.8);
+  maxFuel=(420+len*0.6)*Math.max(0.6,1-0.04*(n-1));
+  // damper tank: short bursts, refilled slowly from the main tank (slower at higher levels)
+  rcsMax=Math.max(1.5,3-0.15*(n-1));rcsRate=rcsMax/(6+0.5*(n-1));
+}
+
+// The world: F = floor, R = underside of overhead rock (Infinity = open sky),
+// M = mountain surface. Rock exists below F, and between R and M when R < M.
+const S={F:0,R:Infinity,M:0};
+function sample(x,y){
+  // the rare peak lower than the ceiling is lifted just above it, so you can never fly over
+  const m=Math.max(T.CEIL+12,MTN_BASE+MTN_AMP*fbm(x*.0035+11,y*.0035-7)+30*vnoise(x*.03,y*.03));
+  const wob=(vnoise(x*.02+50,y*.02)-.5)*14;
+  const bump=(3+LV.wob*10)*vnoise(x*.05+9,y*.05+3)+LV.wob*30*(vnoise(x*.012+3,y*.012-5)-.5);
+  const rb=LV.wob*20*(vnoise(x*.035-20,y*.035+40)-.5);
+  let F=Infinity,R=-Infinity,any=false;
+  for(let i=0;i<SEGS.length;i++){const s=SEGS[i];
+    let t=((x-s.ax)*s.dx+(y-s.ay)*s.dy)/s.l2;
+    if(t<0){if(!s.capA)continue;t=0;}else if(t>1){if(!s.capB)continue;t=1;}
+    const px=s.ax+s.dx*t-x,py=s.ay+s.dy*t-y;
+    const d=Math.sqrt(px*px+py*py)+wob;
+    if(d>=HW+SL)continue;
+    const fl=s.fa+(s.fb-s.fa)*t+bump;
+    const k=sstep(HW,HW+SL,d);
+    const f=fl+(m-fl)*Math.pow(k,1.4);
+    let r=Infinity;
+    if(s.tun){const c=Math.max(28,s.clear+rb);r=fl+c*(1-0.55*k);if(r-f<1)continue;}
+    if(f<F)F=f;if(r>R)R=r;any=true;
+  }
+  if(!any){F=m;R=Infinity;}
+  const qx=x-PAD.x,qy=y-PAD.y,dp=Math.sqrt(qx*qx+qy*qy);
+  if(dp<PADR+14&&F<PAD.h+40){const b=sstep(PADR,PADR+14,dp);F=PAD.h+(F-PAD.h)*b;}
+  S.F=F;S.R=R<m?R:Infinity;S.M=m;return F;
+}
+
+// ---- lander shape (local meters, feet at y=0, pivot y=5) ----
+const HULL_LINES=[
+  [[-4,3],[4,3],[4,6.5],[-4,6.5],[-4,3]],
+  [[-3,6.5],[-3.6,9],[-2,11],[2,11],[3.6,9],[3,6.5]],
+  [[-4,3.6],[-6.5,0]],[[4,3.6],[6.5,0]],
+  [[-1.2,3],[-1.8,1.6],[1.8,1.6],[1.2,3]]];
+const FOOT_LINES=[[[-7.6,0],[-5.4,0]],[[5.4,0],[7.6,0]]];
+const DECOR_LINES=[[[-1,9.6],[1,9.6]],[[-4,5.2],[-5.8,1]],[[4,5.2],[5.8,1]]];
+const PERIM=[];
+function addPerim(lines,feet){for(const pl of lines)for(let i=0;i<pl.length-1;i++){
+  const[a,b]=[pl[i],pl[i+1]],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/0.7));
+  for(let j=0;j<=n;j++){const x=a[0]+(b[0]-a[0])*j/n,y=a[1]+(b[1]-a[1])*j/n;PERIM.push({x,y,feet:feet||y<0.05});}}}
+addPerim(HULL_LINES,false);addPerim(FOOT_LINES,true);
+
+// ---- state ----
+const L={x:0,y:0,z:0,vx:0,vy:0,vz:0,tilt:0,heading:0};
+let fuel=0,state='ready',paused=false,ghosts=true,thrusting=false,boosting=false,braking=false,yawing=0;
+let parts=[],debris=[],padSeen=false,toastT=0,lastReason='',lastPts=0;
+const cam={zf:0,near:false};let warn=false;
+function resetLander(){cam.near=false;L.x=START.x;L.y=START.y;L.z=Math.min(START.f+140,T.CEIL-30);L.vx=L.vy=L.vz=0;L.tilt=0;
+  L.heading=START_HEADING;fuel=maxFuel;rcs=rcsMax;rcsWait=0;parts=[];debris=[];padSeen=false;cam.zf=0;}
+
+function toWorld(lx,ly){const c=Math.cos(L.tilt),s=Math.sin(L.tilt),ry=ly-5;return[lx*c+ry*s,-lx*s+ry*c+5];}
+
+// Collision is tested against exactly what's drawn: the slice. Rotating the view
+// can therefore swing rock into (or around) the lander.
+function collide(){
+  const dx=Math.cos(L.heading),dy=Math.sin(L.heading);let foot=null;
+  for(const p of PERIM){const[a,z]=toWorld(p.x,p.y);sample(L.x+a*dx,L.y+a*dy);const wz=L.z+z;
+    if(wz<=S.F){const c={kind:p.feet?'feet':'hull',lx:p.x,ly:p.y,a,wz,ter:S.F,pen:S.F-wz};if(!p.feet)return c;foot=foot||c;}
+    else if(wz>=S.R&&wz<=S.M)return{kind:'roof',lx:p.x,ly:p.y,a,wz,ter:S.R,pen:wz-S.R};}
+  return foot;
+}
+
+const keys={};
+const KEYMAP={s:'brake',S:'brake',x:'brake',X:'brake',Shift:'boost',ArrowLeft:'tl',ArrowRight:'tr',ArrowUp:'thrust',' ':'thrust',a:'yl',q:'yl',d:'yr',e:'yr',A:'yl',Q:'yl',D:'yr',E:'yr'};
+addEventListener('keydown',e=>{
+  if(logOpen){if(e.key==='l'||e.key==='L'||e.key==='Escape'){toggleLog();e.preventDefault();}return;}
+  if((e.key==='l'||e.key==='L')&&!e.repeat){toggleLog();return;}
+  initAudio();
+  if(KEYMAP[e.key]){keys[KEYMAP[e.key]]=true;e.preventDefault();}
+  if(e.repeat)return;
+  if(e.key===' '||e.key==='Enter')advance();
+  if(e.key==='g'||e.key==='G')ghosts=!ghosts;
+  if((e.key==='v'||e.key==='V')&&mapAvailable())mapOn=!mapOn;
+  if(e.key==='m'||e.key==='M')muted=!muted;
+  if(e.key==='r'||e.key==='R'){if(state==='flying')logEv('restarted');resetLander();state='flying';paused=false;hideMsg();logStart();}
+  if((e.key==='p'||e.key==='P'||e.key==='Escape')&&state==='flying'){paused=!paused;paused?showMsg('pause'):hideMsg();}
+});
+addEventListener('keyup',e=>{if(KEYMAP[e.key])keys[KEYMAP[e.key]]=false;});
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
+document.querySelectorAll('#touch button').forEach(b=>{
+  const k=b.dataset.k;
+  const on=e=>{e.preventDefault();initAudio();keys[k]=true;b.classList.add('on');};
+  const off=e=>{e.preventDefault();keys[k]=false;b.classList.remove('on');};
+  b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);
+  b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off);
+});
+document.getElementById('msg').addEventListener('pointerdown',e=>{if(e.target.closest('#openlog')){e.stopPropagation();toggleLog();return;}initAudio();advance();});
+
+function advance(){
+  if(paused){paused=false;hideMsg();return;}
+  if(state==='ready'){state='flying';hideMsg();logStart();}
+  else if(state==='crashed'){resetLander();state='flying';hideMsg();logStart();}
+  else if(state==='landed'){level++;buildLevel(level);resetLander();state='ready';showMsg('level');}
+}
+
+// ---- audio ----
+let AC=null,muted=false,thrG,rcsG;
+function initAudio(){
+  if(AC)return;try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
+  const buf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const mk=(type,f,q)=>{const s=AC.createBufferSource();s.buffer=buf;s.loop=true;
+    const fl=AC.createBiquadFilter();fl.type=type;fl.frequency.value=f;fl.Q.value=q;
+    const g=AC.createGain();g.gain.value=0;s.connect(fl).connect(g).connect(AC.destination);s.start();return g;};
+  thrG=mk('lowpass',520,0.7);rcsG=mk('bandpass',3200,2);
+}
+function blip(freqs,dur,type='sine',vol=.08){if(!AC||muted)return;
+  freqs.forEach((f,i)=>{const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;
+    const t0=AC.currentTime+i*dur*.8;g.gain.setValueAtTime(vol,t0);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    o.connect(g).connect(AC.destination);o.start(t0);o.stop(t0+dur);});}
+function boom(){if(!AC||muted)return;const n=AC.sampleRate*1.2,b=AC.createBuffer(1,n,AC.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.5);
+  const s=AC.createBufferSource();s.buffer=b;const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=900;
+  const g=AC.createGain();g.gain.value=.5;s.connect(f).connect(g).connect(AC.destination);s.start();}
+
+// ---- update ----
+function update(dt){
+  const dx=Math.cos(L.heading),dy=Math.sin(L.heading);
+  thrusting=false;boosting=false;braking=false;yawing=0;
+  if(state==='flying'){
+    if(keys.tl)L.tilt-=T.TILT_RATE*dt;
+    if(keys.tr)L.tilt+=T.TILT_RATE*dt;
+    L.tilt=clamp(L.tilt,-1.75,1.75);
+    const yaw=(keys.yr?1:0)-(keys.yl?1:0);
+    if(yaw){L.heading+=yaw*T.YAW_RATE*dt;yawing=yaw;}
+    let ax=0,ay=0,az=-T.G;
+    if(keys.thrust&&fuel>0){thrusting=true;boosting=!!keys.boost;const s=Math.sin(L.tilt),c=Math.cos(L.tilt);
+      const th=T.THRUST*(boosting?T.BOOST:1);
+      ax=th*s*dx;ay=th*s*dy;az+=th*c;fuel=Math.max(0,fuel-T.BURN*(boosting?T.BOOST_BURN:1)*dt);
+      for(let e=0;e<(boosting?2:1);e++)if(Math.random()<.7){const[na,nz]=toWorld((Math.random()-.5)*2,1.4);const sp=14+Math.random()*8;
+        parts.push({x:L.x+na*dx,y:L.y+na*dy,z:L.z+nz,vx:L.vx-s*dx*sp+(Math.random()-.5)*3,
+          vy:L.vy-s*dy*sp+(Math.random()-.5)*3,vz:L.vz-c*sp,life:.55+Math.random()*.3,max:.85,hot:boosting});}}
+    L.vx+=ax*dt;L.vy+=ay*dt;L.vz+=az*dt;
+    // drift damper: side thrusters cancel only motion into/out of the screen, from a
+    // small separate tank (rcs, in seconds of firing) that shrinks each level.
+    // Across-screen motion is left to classic tilt-and-burn.
+    const nx=-dy,ny=dx,vn=L.vx*nx+L.vy*ny;
+    if(keys.brake&&rcs>0&&Math.abs(vn)>0.01){braking=true;const dv=Math.min(Math.abs(vn),T.BRAKE*dt)*Math.sign(vn);
+      L.vx-=nx*dv;L.vy-=ny*dv;rcs=Math.max(0,rcs-dt);
+      if(Math.random()<.5){const ux=nx*Math.sign(vn),uy=ny*Math.sign(vn),sp=10+Math.random()*6;
+        parts.push({x:L.x+ux*4,y:L.y+uy*4,z:L.z+7,vx:L.vx+ux*sp+(Math.random()-.5)*2,vy:L.vy+uy*sp+(Math.random()-.5)*2,
+          vz:L.vz+(Math.random()-.5)*2,life:.3+Math.random()*.2,max:.5});}}
+    if(keys.brake)rcsWait=T.RCS_DELAY;
+    else if(rcs<rcsMax&&fuel>0){rcsWait-=dt;
+      if(rcsWait<=0){const add=Math.min(rcsMax-rcs,rcsRate*dt);rcs+=add;fuel=Math.max(0,fuel-add*T.RCS_FUEL);}}
+    L.x+=L.vx*dt;L.y+=L.vy*dt;L.z+=L.vz*dt;
+    if(L.z+11>T.CEIL){L.z=T.CEIL-11;if(L.vz>0)L.vz=0;}
+    logTick(dt);
+    const hit=collide();
+    if(hit)logEv(`contact: ${hit.kind} point (${hit.lx.toFixed(1)},${hit.ly.toFixed(1)}) in lander coords, ${f1(hit.a)} m along slice; point z=${hit.wz.toFixed(2)} vs ${hit.kind==='roof'?'roof':'ground'} ${hit.ter.toFixed(2)} (${hit.pen.toFixed(2)} m in)${yawing?' while rotating':''}`);
+    if(hit&&hit.kind==='hull')crash(yawing?'Rotated the lander into the terrain.':'The hull hit the terrain.');
+    else if(hit&&hit.kind==='roof')crash(yawing?'Rotated the lander into the rock overhead.':'Hit the tunnel roof.');
+    else if(hit&&hit.kind==='feet')touchdown();
+  }
+  for(const p of parts){p.vz-=T.G*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.life-=dt;}
+  parts=parts.filter(p=>p.life>0);
+  for(const p of debris){p.vz-=T.G*dt;p.s+=p.vs*dt;p.z+=p.vz*dt;p.r+=p.vr*dt;p.life-=dt*.35;
+    sample(L.x+dx*p.s,L.y+dy*p.s);
+    if(p.z<S.F){p.z=S.F;p.vz*=-.3;p.vs*=.6;p.vr*=.6;}
+    else if(p.z>S.R&&p.z<S.M){p.z=S.R;p.vz=-Math.abs(p.vz)*.3;}}
+  debris=debris.filter(p=>p.life>0);
+}
+
+// Every touchdown produces a report of all four checks, so a failed landing says exactly why.
+let lastReport=null;
+function touchdown(){
+  const hs=Math.hypot(L.vx,L.vy),dp=Math.hypot(L.x-PAD.x,L.y-PAD.y),tiltD=Math.abs(L.tilt)*57.3;
+  const onPad=dp<=PADR-1;
+  lastReport=[
+    ['Descent',(-L.vz).toFixed(1)+' m/s','under '+T.SAFE_VZ.toFixed(1),-L.vz<=T.SAFE_VZ],
+    ['Sideways',hs.toFixed(1)+' m/s','under '+T.SAFE_H.toFixed(1),hs<=T.SAFE_H],
+    ['Tilt',Math.round(tiltD)+'°','under '+Math.round(T.SAFE_TILT*57.3)+'°',Math.abs(L.tilt)<=T.SAFE_TILT],
+    ['On pad',onPad?'yes':Math.round(dp)+' m from centre','within '+(PADR-1)+' m',onPad]];
+  logEv('touchdown: '+lastReport.map(([k,v,lim,ok])=>`${k} ${v} (${lim}) ${ok?'ok':'FAIL'}`).join('; '));
+  const fail=lastReport.find(r=>!r[3]);
+  if(fail){
+    if(!onPad&&yawing)return crash('Rotated the lander into the terrain.',true);
+    const msgs={Descent:'Came down too fast.',Sideways:'Still moving sideways at touchdown.',Tilt:'Not upright at touchdown.','On pad':'Touched down off the pad.'};
+    return crash(msgs[fail[0]],true);}
+  state='landed';logEv('LANDED');L.vx=L.vy=L.vz=0;
+  const pts=100+Math.round(fuel)+level*50;score+=pts;lastPts=pts;
+  blip([523,659,784],.18,'triangle',.07);showMsg('landed');
+}
+function crash(r,keepReport){
+  if(!keepReport)lastReport=null;
+  telemetry();logEv('CRASH: '+r);
+  state='crashed';lastReason=r;boom();
+  const dx=Math.cos(L.heading),dy=Math.sin(L.heading),vs=L.vx*dx+L.vy*dy;
+  for(let i=0;i<16;i++){const a=Math.random()*TAU,sp=4+Math.random()*12;
+    debris.push({s:(Math.random()-.5)*6,z:L.z+3+Math.random()*6,vs:vs*.4+Math.cos(a)*sp,vz:Math.abs(Math.sin(a))*sp+2,
+      r:Math.random()*TAU,vr:(Math.random()-.5)*8,len:1.5+Math.random()*3.5,life:1});}
+  L.vx=L.vy=L.vz=0;setTimeout(()=>{if(state==='crashed')showMsg('crashed');},900);
+}
+
+// ---- render ----
+const STARS=Array.from({length:460},()=>({a:Math.random()*TAU,y:Math.random()*.8,r:Math.random()<.1?1.5:.8,b:.25+Math.random()*.6}));
+let scale=1,cy=VIEW_H/2;
+function sliceData(off,dx,dy,nx,ny,half,st){
+  const n=Math.ceil(2*half/st)+1,s=new Float32Array(n),F=new Float32Array(n),R=new Float32Array(n),M=new Float32Array(n);
+  const ox=L.x+nx*off,oy=L.y+ny*off;
+  for(let i=0;i<n;i++){const v=-half+i*st;s[i]=v;sample(ox+dx*v,oy+dy*v);F[i]=S.F;R[i]=S.R;M[i]=S.M;}
+  return{n,s,F,R,M};
+}
+// Distance from the lander to the terrain in the slice: from its centre (for the
+// camera) and from its outline (for the proximity warning).
+function proximity(dx,dy,nx,ny){
+  const d=sliceData(0,dx,dy,nx,ny,100,1),zc=L.z+5;let center=1e9,edge=1e9;
+  const pts=[];for(let i=0;i<PERIM.length;i+=3){const[a,z]=toWorld(PERIM[i].x,PERIM[i].y);pts.push(a,L.z+z);}
+  for(let i=0;i<d.n;i++){const s=d.s[i],roof=d.R[i]<d.M[i]-.3;
+    const cf=Math.hypot(s,d.F[i]-zc)-8;if(cf<center)center=cf;
+    if(roof){const cr=Math.hypot(s,d.R[i]-zc)-8;if(cr<center)center=cr;}
+    if(Math.abs(s)<14)for(let j=0;j<pts.length;j+=2){const ds=s-pts[j];
+      const ef=Math.hypot(ds,d.F[i]-pts[j+1]);if(ef<edge)edge=ef;
+      if(roof){const er=Math.hypot(ds,d.R[i]-pts[j+1]);if(er<edge)edge=er;}}}
+  return{center,edge};
+}
+function runs(d){const out=[];let st=-1;
+  for(let i=0;i<d.n;i++){const on=d.R[i]<d.M[i]-.3;
+    if(on&&st<0)st=i;if((!on||i===d.n-1)&&st>=0){out.push([st,on?i:i-1]);st=-1;}}
+  return out;}
+
+function render(dt){
+  const dx=Math.cos(L.heading),dy=Math.sin(L.heading),nx=-dy,ny=dx;
+  const base=Hc*.92/VIEW_H;
+  sample(L.x,L.y);
+  const agl=L.z-S.F;
+  const prox=proximity(dx,dy,nx,ny);warn=prox.edge<4&&state==='flying';
+  // zoom in when any terrain in the slice is close (with hysteresis), not just the ground below
+  if(prox.center<45||agl<70)cam.near=true;else if(prox.center>75&&agl>100)cam.near=false;
+  const zt=(state==='flying'||state==='landed')&&cam.near||(state==='crashed'&&cam.zf>.5)?1:0;
+  cam.zf+=(zt-cam.zf)*Math.min(1,dt*2.5);
+  scale=base*(1+1.3*cam.zf);cy=VIEW_H/2+(L.z+8-VIEW_H/2)*cam.zf;
+  const SX=s=>W/2+s*scale,SY=z=>Hc/2-(z-cy)*scale;
+
+  ctx.fillStyle='#070a14';ctx.fillRect(0,0,W,Hc);
+  const span=W*3.2;
+  for(const s of STARS){const x=(((s.a-L.heading)%TAU+TAU)%TAU)/TAU*span;if(x>W)continue;
+    ctx.fillStyle=`rgba(210,222,255,${s.b})`;ctx.fillRect(x,s.y*Hc,s.r,s.r);}
+
+  const half=W/2/scale+6,st=2/scale;
+  const d=sliceData(0,dx,dy,nx,ny,half,st),rr=runs(d);
+  const grad=ctx.createLinearGradient(0,SY(600),0,SY(0));
+  grad.addColorStop(0,'#1b2545');grad.addColorStop(1,'#080b16');
+
+  const line=(A,i0,i1)=>{for(let i=i0;i<=i1;i++){const X=SX(d.s[i]),Y=SY(A[i]);i===i0?ctx.moveTo(X,Y):ctx.lineTo(X,Y);}};
+  const back=(A,i0,i1)=>{for(let i=i1;i>=i0;i--)ctx.lineTo(SX(d.s[i]),SY(A[i]));};
+
+  // floor
+  ctx.beginPath();ctx.moveTo(SX(d.s[0]),Hc+10);for(let i=0;i<d.n;i++)ctx.lineTo(SX(d.s[i]),SY(d.F[i]));
+  ctx.lineTo(SX(d.s[d.n-1]),Hc+10);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  // tunnel air (dark) and overhead rock
+  for(const[i0,i1]of rr){
+    ctx.beginPath();line(d.F,i0,i1);back(d.R,i0,i1);ctx.closePath();ctx.fillStyle='#03050b';ctx.fill();
+    ctx.beginPath();line(d.R,i0,i1);back(d.M,i0,i1);ctx.closePath();ctx.fillStyle=grad;ctx.fill();}
+
+  // ceiling
+  ctx.save();ctx.setLineDash([6,8]);ctx.strokeStyle='rgba(106,122,163,.55)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,SY(T.CEIL));ctx.lineTo(W,SY(T.CEIL));ctx.stroke();ctx.restore();
+  ctx.fillStyle='rgba(106,122,163,.8)';ctx.font='12px "Share Tech Mono",monospace';
+  ctx.fillText('ceiling',Math.min(230,W*.3),SY(T.CEIL)-6);
+
+  if(ghosts){ctx.save();ctx.setLineDash([2,5]);ctx.lineWidth=1;
+    for(const off of[-T.GHOST_OFF,T.GHOST_OFF]){const g=sliceData(off,dx,dy,nx,ny,half,st*2);
+      ctx.strokeStyle=off>0?'rgba(150,170,230,.3)':'rgba(150,170,230,.2)';
+      ctx.beginPath();for(let i=0;i<g.n;i++){const X=SX(g.s[i]),Y=SY(g.F[i]);const jump=i>0&&Math.abs(g.F[i]-g.F[i-1])>25;(i&&!jump)?ctx.lineTo(X,Y):ctx.moveTo(X,Y);}
+      for(const[i0,i1]of runs(g))for(let i=i0;i<=i1;i++){const X=SX(g.s[i]),Y=SY(g.R[i]);i===i0?ctx.moveTo(X,Y):ctx.lineTo(X,Y);}
+      ctx.stroke();}
+    ctx.restore();}
+
+  ctx.save();ctx.shadowColor='rgba(170,195,255,.7)';ctx.shadowBlur=7;ctx.strokeStyle='#dfe8ff';ctx.lineWidth=1.6;ctx.lineJoin='round';
+  // floor line; skip the jump where a tunnel wall closes into solid rock
+  ctx.beginPath();
+  for(let i=0;i<d.n;i++){const X=SX(d.s[i]),Y=SY(d.F[i]);
+    const inR=j=>d.R[j]<d.M[j]-.3;
+    const hidden=i>0&&((inR(i-1)&&d.F[i]>d.R[i-1]+.5)||(inR(i)&&d.F[i-1]>d.R[i]+.5));
+    if(i===0)ctx.moveTo(X,Y);
+    else if(hidden){if(inR(i-1)){ctx.lineTo(SX(d.s[i-1]),SY(d.R[i-1]));ctx.moveTo(X,Y);}
+      else{ctx.moveTo(X,SY(d.R[i]));ctx.lineTo(X,Y);}}
+    else ctx.lineTo(X,Y);}
+  // roof and mountain top over tunnels; draw the vertical end of a rock band only
+  // where it's a real cliff face (open air beside it), not where rock continues
+  for(const[i0,i1]of rr){line(d.R,i0,i1);line(d.M,i0,i1);
+    const face=i=>{ctx.moveTo(SX(d.s[i]),SY(d.R[i]));ctx.lineTo(SX(d.s[i]),SY(d.M[i]));};
+    if(i0>0&&d.F[i0-1]<d.R[i0]-1)face(i0);
+    if(i1<d.n-1&&d.F[i1+1]<d.R[i1]-1)face(i1);}
+  ctx.stroke();ctx.restore();
+
+  // pad
+  const rx=PAD.x-L.x,ry=PAD.y-L.y,pa=rx*dx+ry*dy,pd=rx*nx+ry*ny;
+  const inView=Math.abs(pd)<PADR;
+  if(inView){const hc=Math.sqrt(PADR*PADR-pd*pd),y=SY(PAD.h)-1.5,x1=SX(pa-hc),x2=SX(pa+hc);
+    ctx.save();ctx.shadowColor='#ffb547';ctx.shadowBlur=10;ctx.strokeStyle='#ffb547';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();
+    if((performance.now()/400|0)%2){ctx.fillStyle='#ffb547';ctx.fillRect(x1-2,y-6,3,3);ctx.fillRect(x2-1,y-6,3,3);}
+    ctx.restore();
+    const px=SX(pa);
+    if(px<0||px>W){const edge=px<0?18:W-18,dir=px<0?-1:1,yy=Math.min(Hc-120,Math.max(140,y));
+      ctx.fillStyle='#ffb547';ctx.beginPath();ctx.moveTo(edge+dir*8,yy);ctx.lineTo(edge-dir*4,yy-7);ctx.lineTo(edge-dir*4,yy+7);ctx.fill();
+      ctx.textAlign=dir<0?'left':'right';ctx.fillText(`pad ${Math.round(Math.abs(pa))} m`,edge-dir*10,yy+22);ctx.textAlign='left';}
+  }
+  if(inView&&!padSeen&&state==='flying'){toastT=1.6;logEv('pad came into view');}
+  if(state==='flying'&&warn!==lastWarn){lastWarn=warn;logEv(warn?'proximity warning on':'proximity warning off');}
+  padSeen=inView;
+  toastT-=dt;document.getElementById('toast').style.opacity=toastT>0?1:0;
+
+  for(const p of parts){const s=(p.x-L.x)*dx+(p.y-L.y)*dy;const a=p.life/p.max;
+    ctx.fillStyle=p.hot?`rgba(${150+100*a|0},${205+50*a|0},255,${a})`:`rgba(255,${180+60*a|0},${120*a|0},${a})`;ctx.fillRect(SX(s)-1,SY(p.z)-1,p.hot?3:2,p.hot?3:2);}
+
+  if(state!=='crashed'){
+    ctx.save();ctx.translate(W/2,SY(L.z+5));ctx.rotate(L.tilt);ctx.scale(scale,scale);
+    ctx.strokeStyle=warn?'#ffb547':'#dfe8ff';ctx.lineWidth=1.3/scale;ctx.lineJoin='round';ctx.shadowColor=warn?'rgba(255,181,71,.8)':'rgba(170,195,255,.7)';ctx.shadowBlur=warn?9:5;
+    const poly=arr=>{ctx.beginPath();arr.forEach(([x,y],i)=>{i?ctx.lineTo(x,-(y-5)):ctx.moveTo(x,-(y-5));});ctx.stroke();};
+    HULL_LINES.forEach(poly);FOOT_LINES.forEach(poly);DECOR_LINES.forEach(poly);
+    if(thrusting&&!boosting){const len=3+Math.random()*3.5;ctx.strokeStyle='#ffb547';ctx.shadowColor='#ffb547';ctx.shadowBlur=10;
+      poly([[-1.3,1.5],[0,1.5-len],[1.3,1.5]]);}
+    // boost: a wider, longer, blue-hot flame with a white core
+    if(boosting){const len=7+Math.random()*5;
+      ctx.fillStyle='rgba(110,190,255,.35)';ctx.strokeStyle='#6ebeff';ctx.shadowColor='#6ebeff';ctx.shadowBlur=18;
+      ctx.beginPath();ctx.moveTo(-1.8,-(1.5-5));ctx.lineTo(0,-(1.5-len-5));ctx.lineTo(1.8,-(1.5-5));ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.strokeStyle='#ffffff';ctx.shadowColor='#bfe4ff';ctx.shadowBlur=8;
+      poly([[-.8,1.5],[0,1.5-len*.55],[.8,1.5]]);}
+    if(yawing){ctx.strokeStyle='rgba(223,232,255,.7)';ctx.shadowBlur=0;const sx=yawing>0?1:-1;
+      poly([[-2*sx,10.5],[-3.6*sx,11.4]]);}
+    ctx.restore();
+  }
+  for(const p of debris){ctx.save();ctx.translate(SX(p.s),SY(p.z));ctx.rotate(p.r);
+    ctx.strokeStyle=`rgba(223,232,255,${Math.min(1,p.life*1.4)})`;ctx.lineWidth=1.3;
+    ctx.beginPath();ctx.moveTo(-p.len*scale/2,0);ctx.lineTo(p.len*scale/2,0);ctx.stroke();ctx.restore();}
+
+  draw3D(dx,dy,nx,ny);
+  drawCompass(dx,dy,nx,ny,inView);
+}
+
+// Top-down compass: the horizontal line is your slice, the needle points to the pad.
+function drawCompass(dx,dy,nx,ny,inView){
+  const R=Math.min(56,Math.max(40,W*.06));
+  const cx=W-R-22,cyc=isTouch?Math.max(170,Hc*.22)+R:Hc-R-28;
+  ctx.save();
+  ctx.fillStyle='rgba(7,10,20,.65)';ctx.beginPath();ctx.arc(cx,cyc,R+6,0,TAU);ctx.fill();
+  ctx.strokeStyle='rgba(106,122,163,.7)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cyc,R,0,TAU);ctx.stroke();
+  for(let i=0;i<12;i++){const a=i/12*TAU,r1=R-(i%3?3:6);
+    ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*r1,cyc+Math.sin(a)*r1);ctx.lineTo(cx+Math.cos(a)*R,cyc+Math.sin(a)*R);ctx.stroke();}
+  ctx.strokeStyle=inView?'rgba(255,181,71,.8)':'rgba(223,232,255,.45)';
+  ctx.beginPath();ctx.moveTo(cx-R+8,cyc);ctx.lineTo(cx+R-8,cyc);ctx.stroke();
+  ctx.fillStyle='rgba(106,122,163,.9)';ctx.beginPath();ctx.moveTo(cx,cyc+R+3);ctx.lineTo(cx-4,cyc+R+9);ctx.lineTo(cx+4,cyc+R+9);ctx.fill();
+  const rx=PAD.x-L.x,ry=PAD.y-L.y,px=rx*dx+ry*dy,py=-(rx*nx+ry*ny);
+  const a=Math.atan2(py,px),c=Math.cos(a),s=Math.sin(a),tip=R-7,tail=R*.42,w=5;
+  ctx.save();ctx.shadowColor='#ffb547';ctx.shadowBlur=inView?12:5;
+  ctx.fillStyle='#ffb547';ctx.beginPath();ctx.moveTo(cx+c*tip,cyc+s*tip);ctx.lineTo(cx-s*w,cyc+c*w);ctx.lineTo(cx+s*w,cyc-c*w);ctx.closePath();ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='rgba(106,122,163,.9)';ctx.beginPath();ctx.moveTo(cx-c*tail,cyc-s*tail);ctx.lineTo(cx-s*w,cyc+c*w);ctx.lineTo(cx+s*w,cyc-c*w);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#dfe8ff';ctx.beginPath();ctx.arc(cx,cyc,2.2,0,TAU);ctx.fill();
+  ctx.fillStyle='rgba(150,165,205,.95)';ctx.font='11px "Share Tech Mono",monospace';ctx.textAlign='center';
+  ctx.fillText(`pad ${Math.round(Math.hypot(px,py))} m`,cx,cyc-R-11);ctx.restore();
+}
+
+
+// ---- 3D map overlay, phased out gradually (see mapSpec) ----
+// A small perspective view of the terrain around the lander, seen from the viewer's
+// side of the slice, with the slice drawn as a translucent plane so the 2D view and
+// the 3D world line up. Mountains are flattened at the ceiling so canyons read as trenches.
+// Levels 1-3: full map. 4-5: the map fades out as you near the pad, so the final
+// approach is flown on the slice. 6-7: it also covers a shrinking area. 8+: offline.
+const MAP_LAST=7;let mapOn=true;
+function mapSpec(n){
+  if(n>MAP_LAST)return null;
+  return{N:n<=5?31:n===6?21:15,fade:n>=4};
+}
+const G3={key:null,N:31,st:16,h:new Float32Array(31*31),roof:new Uint8Array(31*31),ox:0,oy:0};
+function mapAvailable(){return level<=MAP_LAST;}
+function draw3D(dx,dy,nx,ny){
+  const spec=mapSpec(level);
+  if(!spec||!mapOn)return;
+  const N=spec.N,st=G3.st,half=(N-1)/2*st,top=T.CEIL+12;
+  const padD=Math.hypot(L.x-PAD.x,L.y-PAD.y),A=spec.fade?clamp((padD-60)/90,0,1):1;
+  const ox=Math.round(L.x/st)*st-half,oy=Math.round(L.y/st)*st-half,key=ox+','+oy+','+level;
+  if(G3.key!==key){G3.key=key;G3.ox=ox;G3.oy=oy;
+    for(let i=0;i<N;i++)for(let j=0;j<N;j++){const f=sample(ox+i*st,oy+j*st);
+      G3.h[i*N+j]=Math.min(f,top);G3.roof[i*N+j]=S.R!==Infinity?1:0;}}
+  const pw=Math.round(Math.min(340,Math.max(220,W*(isTouch?.46:.3)))),ph=Math.round(pw*.68);
+  const px=18,py=isTouch?Math.round(Math.max(96,Hc*.13)):Math.round(Hc-ph-20);
+  // camera on the viewer's side (-n), above and behind, looking at the lander
+  // heights are squashed (ZS) and the camera sits high so canyon walls don't hide the lander
+  const ZS=.45,el=0.98,D=640*(half/240),tz=(Math.min(L.z,200)*.5+40)*ZS;
+  const Tx=L.x,Ty=L.y,Cx=Tx-nx*D*Math.cos(el),Cy=Ty-ny*D*Math.cos(el),Cz=tz+D*Math.sin(el);
+  let fx=Tx-Cx,fy=Ty-Cy,fz=tz-Cz;const fl=Math.hypot(fx,fy,fz);fx/=fl;fy/=fl;fz/=fl;
+  const rx=dx,ry=dy;           // right = slice direction
+  const ux=ry*fz,uy=-rx*fz,uz=rx*fy-ry*fx; // up = right x forward
+  const foc=pw*1.08*(half>=240?1:.92),cx0=px+pw/2,cy0=py+ph*.55;
+  const P=(x,y,z)=>{const vx=x-Cx,vy=y-Cy,vz=z*ZS-Cz,zc=vx*fx+vy*fy+vz*fz;
+    return[cx0+(vx*rx+vy*ry)/zc*foc,cy0-(vx*ux+vy*uy+vz*uz)/zc*foc,zc];};
+  ctx.save();
+  ctx.fillStyle='rgba(7,10,20,.82)';ctx.strokeStyle='rgba(106,122,163,.55)';ctx.lineWidth=1;
+  ctx.fillRect(px,py,pw,ph);ctx.strokeRect(px+.5,py+.5,pw-1,ph-1);
+  ctx.beginPath();ctx.rect(px,py,pw,ph);ctx.clip();
+  if(A<.02){ctx.fillStyle='rgba(150,165,205,.9)';ctx.font='12px "Share Tech Mono",monospace';ctx.textAlign='center';
+    ctx.fillText('Map offline near the pad.',px+pw/2,py+ph/2-4);ctx.fillText('Land using the slice.',px+pw/2,py+ph/2+14);
+    ctx.textAlign='left';ctx.restore();return;}
+  ctx.globalAlpha=A;
+  // terrain quads, split by which side of the slice they're on so the plane sorts correctly
+  const back=[],front=[];
+  for(let i=0;i<N-1;i++)for(let j=0;j<N-1;j++){
+    const a=i*N+j,b=(i+1)*N+j,c=(i+1)*N+j+1,e=i*N+j+1;
+    const x0=ox+i*st,y0=oy+j*st,x1=x0+st,y1=y0+st;
+    const p1=P(x0,y0,G3.h[a]),p2=P(x1,y0,G3.h[b]),p3=P(x1,y1,G3.h[c]),p4=P(x0,y1,G3.h[e]);
+    if(p1[2]<5||p2[2]<5||p3[2]<5||p4[2]<5)continue;
+    const mx=x0+st/2-L.x,my=y0+st/2-L.y,side=mx*nx+my*ny;
+    const gx=(G3.h[a]+G3.h[e]-G3.h[b]-G3.h[c])/(2*st),gy=(G3.h[a]+G3.h[b]-G3.h[e]-G3.h[c])/(2*st);
+    const nl=Math.hypot(gx,gy,1),lam=Math.max(0,(gx*-.45+gy*-.35+.82)/nl);
+    const hav=(G3.h[a]+G3.h[b]+G3.h[c]+G3.h[e])/4,roof=G3.roof[a]&G3.roof[c];
+    const t=clamp((top-hav)/(top-40),0,1),l=.35+.75*lam;
+    const tt=t*t;let r=24+80*tt,g=30+112*tt,bl=54+150*tt;if(roof){r=86;g=60;bl=150;}
+    (side>0?back:front).push({p:[p1,p2,p3,p4],z:(p1[2]+p3[2])/2,col:`rgb(${r*l|0},${g*l|0},${bl*l|0})`});
+  }
+  const drawQ=arr=>{arr.sort((u,v)=>v.z-u.z);ctx.lineWidth=.5;ctx.strokeStyle='rgba(200,215,255,.08)';
+    for(const q of arr){ctx.beginPath();ctx.moveTo(q.p[0][0],q.p[0][1]);for(let k=1;k<4;k++)ctx.lineTo(q.p[k][0],q.p[k][1]);
+      ctx.closePath();ctx.fillStyle=q.col;ctx.fill();ctx.stroke();}};
+  drawQ(back);
+  // the slice plane and its profile (the same line as the main view)
+  const SPAN=half,Q=(s,z)=>P(L.x+dx*s,L.y+dy*s,z);
+  const c1=Q(-SPAN,0),c2=Q(SPAN,0),c3=Q(SPAN,top),c4=Q(-SPAN,top);
+  ctx.beginPath();ctx.moveTo(c1[0],c1[1]);ctx.lineTo(c2[0],c2[1]);ctx.lineTo(c3[0],c3[1]);ctx.lineTo(c4[0],c4[1]);ctx.closePath();
+  ctx.fillStyle='rgba(223,232,255,.08)';ctx.fill();ctx.strokeStyle='rgba(223,232,255,.35)';ctx.lineWidth=1;ctx.stroke();
+  ctx.beginPath();for(let s2=-SPAN,k=0;s2<=SPAN;s2+=8,k++){const q=Q(s2,Math.min(sample(L.x+dx*s2,L.y+dy*s2),top));k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
+  ctx.strokeStyle='#dfe8ff';ctx.lineWidth=1.4;ctx.stroke();
+  // arrow on the plane showing which way is right on screen
+  const a1=Q(SPAN*.62,top*.9),a2=Q(SPAN*.9,top*.9);
+  ctx.strokeStyle='rgba(223,232,255,.6)';ctx.beginPath();ctx.moveTo(a1[0],a1[1]);ctx.lineTo(a2[0],a2[1]);ctx.stroke();
+  const ang=Math.atan2(a2[1]-a1[1],a2[0]-a1[0]);ctx.beginPath();ctx.moveTo(a2[0],a2[1]);
+  ctx.lineTo(a2[0]-7*Math.cos(ang-.5),a2[1]-7*Math.sin(ang-.5));ctx.moveTo(a2[0],a2[1]);ctx.lineTo(a2[0]-7*Math.cos(ang+.5),a2[1]-7*Math.sin(ang+.5));ctx.stroke();
+  ctx.globalAlpha=A*.8;drawQ(front);ctx.globalAlpha=A;
+  // pad: ring on the ground plus a beacon
+  ctx.strokeStyle='#ffb547';ctx.fillStyle='#ffb547';ctx.lineWidth=2;ctx.beginPath();
+  for(let k=0;k<=20;k++){const a=k/20*TAU,q=P(PAD.x+Math.cos(a)*PADR,PAD.y+Math.sin(a)*PADR,PAD.h);k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
+  ctx.stroke();
+  const b0=P(PAD.x,PAD.y,PAD.h),b1=P(PAD.x,PAD.y,top);
+  if(b0[2]>5){ctx.save();ctx.setLineDash([3,4]);ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(b0[0],b0[1]);ctx.lineTo(b1[0],b1[1]);ctx.stroke();ctx.restore();}
+  // lander: drop line to the ground, marker, and where it'll be in 6 s
+  sample(L.x,L.y);const g0=P(L.x,L.y,Math.min(S.F,top)),l0=P(L.x,L.y,L.z+5);
+  ctx.strokeStyle='rgba(223,232,255,.55)';ctx.lineWidth=1;ctx.setLineDash([2,3]);
+  ctx.beginPath();ctx.moveTo(l0[0],l0[1]);ctx.lineTo(g0[0],g0[1]);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='rgba(223,232,255,.5)';ctx.beginPath();ctx.ellipse(g0[0],g0[1],4,2,0,0,TAU);ctx.fill();
+  const v1=P(L.x+L.vx*6,L.y+L.vy*6,L.z+5+L.vz*6);
+  if(Math.hypot(L.vx,L.vy,L.vz)>.3){ctx.strokeStyle='#7fe3c4';ctx.lineWidth=1.8;ctx.beginPath();ctx.moveTo(l0[0],l0[1]);ctx.lineTo(v1[0],v1[1]);ctx.stroke();
+    const va=Math.atan2(v1[1]-l0[1],v1[0]-l0[0]);ctx.beginPath();ctx.moveTo(v1[0],v1[1]);
+    ctx.lineTo(v1[0]-6*Math.cos(va-.5),v1[1]-6*Math.sin(va-.5));ctx.moveTo(v1[0],v1[1]);ctx.lineTo(v1[0]-6*Math.cos(va+.5),v1[1]-6*Math.sin(va+.5));ctx.stroke();}
+  ctx.save();ctx.shadowColor=warn?'#ffb547':'#dfe8ff';ctx.shadowBlur=8;ctx.fillStyle=warn?'#ffb547':'#ffffff';
+  ctx.beginPath();ctx.arc(l0[0],l0[1],3.5,0,TAU);ctx.fill();ctx.restore();
+  ctx.restore();
+  ctx.fillStyle='rgba(150,165,205,.95)';ctx.font='11px "Share Tech Mono",monospace';ctx.textAlign='left';
+  ctx.fillText(isTouch?'3D map':'3D map (V to hide)',px+8,py+15);
+  ctx.textAlign='center';ctx.fillText('↑ into screen',px+pw/2+ (isTouch?-10:14),py+15);
+  ctx.textAlign='right';ctx.fillStyle='#7fe3c4';ctx.fillText('motion, 6 s',px+pw-8,py+15);ctx.textAlign='left';
+  if(A<1){ctx.fillStyle=`rgba(255,181,71,${(1-A)*.9})`;ctx.fillText('fading near the pad',px+8,py+ph-9);}
+}
+
+// ---- HUD ----
+const $=id=>document.getElementById(id);
+function hud(){
+  const dx=Math.cos(L.heading),dy=Math.sin(L.heading),nx=-dy,ny=dx;
+  sample(L.x,L.y);const agl=Math.max(0,L.z-S.F);
+  const va=L.vx*dx+L.vy*dy,vn=L.vx*nx+L.vy*ny,hs=Math.hypot(L.vx,L.vy);
+  $('lvl').textContent=level;$('score').textContent=score;
+  $('fuel').style.width=(Math.max(0,fuel)/maxFuel*108)+'px';
+  $('rcs').style.width=(rcs/rcsMax*108)+'px';$('rcs').style.background=braking?'#6ebeff':rcs<rcsMax?(rcs<.05?'var(--warn)':'var(--dim)'):'var(--line)';
+  $('fuel').style.background=boosting?'#6ebeff':fuel/maxFuel<.2?'var(--warn)':'var(--line)';
+  $('alt').textContent=agl.toFixed(0)+' m';
+  const hOK=hs<=T.SAFE_H;
+  $('hs').innerHTML=`<span class="${hOK?'ok':'bad'}">${va<0?'◀ ':''}${Math.abs(va).toFixed(1)}${va>0?' ▶':''}</span>`;
+  $('vs').innerHTML=`<span class="${L.vz>=-T.SAFE_VZ?'ok':'bad'}">${L.vz<0?'▼ ':'▲ '}${Math.abs(L.vz).toFixed(1)}</span>`;
+  const td=L.tilt*57.3,tOK=Math.abs(L.tilt)<=T.SAFE_TILT;
+  $('tl').innerHTML=`<span class="${tOK?'ok':'bad'}">${Math.abs(td)<.5?'level':(td<0?'◀ ':'')+Math.abs(td).toFixed(0)+'°'+(td>0?' ▶':'')}</span>`;
+  $('dr').innerHTML=`<span class="${hOK?'ok':'bad'}">${Math.abs(vn)<.05?'':vn>0?'away ':'toward '}${Math.abs(vn).toFixed(1)}</span>`;
+}
+
+
+// ---- flight log (dev / debug) ----
+// Telemetry 4x a second plus events (inputs, warnings, contacts, touchdown checks),
+// kept across attempts. Open with L or from the crash/landing card; copy and paste it.
+const LOG=[];let rcsOut=false,flightT=0,telAcc=0,attempt=0,lastInputs='',lastWarn=false,fuelOut=false,logOpen=false,logPaused=false;
+const f1=v=>(v>=0?'+':'')+v.toFixed(1);
+const tstamp=()=>flightT.toFixed(2).padStart(7);
+function logLine(t){LOG.push(t);if(LOG.length>5000)LOG.splice(0,LOG.length-5000);}
+function logEv(t){logLine(`${tstamp()}  * ${t}`);}
+function inputsStr(){return[keys.thrust&&'thrust',keys.boost&&'boost',keys.brake&&'brake',keys.tl&&'tilt-L',keys.tr&&'tilt-R',keys.yl&&'rot-L',keys.yr&&'rot-R'].filter(Boolean).join(' ')||'none';}
+function telemetry(){
+  const dx=Math.cos(L.heading),dy=Math.sin(L.heading),nx=-dy,ny=dx;sample(L.x,L.y);
+  const roof=S.R!==Infinity?` roof=${(S.R-L.z-11).toFixed(1)}`:'';
+  logLine(`${tstamp()}  pos=(${L.x.toFixed(1)},${L.y.toFixed(1)},${L.z.toFixed(1)}) agl=${(L.z-S.F).toFixed(1)}${roof} across=${f1(L.vx*dx+L.vy*dy)} drift=${f1(L.vx*nx+L.vy*ny)} vz=${f1(L.vz)} tilt=${f1(L.tilt*57.3)}° hdg=${(((L.heading*57.3)%360)+360)%360|0}° pad=${Math.hypot(L.x-PAD.x,L.y-PAD.y).toFixed(1)}m fuel=${fuel.toFixed(0)} rcs=${rcs.toFixed(1)}s [${inputsStr()}]`);
+}
+function logStart(){
+  attempt++;rcsOut=false;flightT=0;telAcc=0;lastInputs='';lastWarn=false;fuelOut=false;
+  logLine('');logLine(`=== Level ${level}, attempt ${attempt} ===`);
+  logLine(`limits: descent<=${T.SAFE_VZ} m/s, sideways<=${T.SAFE_H} m/s, tilt<=${Math.round(T.SAFE_TILT*57.3)}°, within ${PADR-1} m of pad centre`);
+  logLine(`pad=(${PAD.x.toFixed(1)},${PAD.y.toFixed(1)},${PAD.h.toFixed(1)}) fuel=${maxFuel.toFixed(0)} tunnels=${SEGS.filter(s=>s.tun).length} canyon half-width=${HW}`);
+  telemetry();
+}
+function logTick(dt){
+  flightT+=dt;telAcc+=dt;
+  const inp=inputsStr();if(inp!==lastInputs){logEv('inputs: '+inp);lastInputs=inp;}
+  if(fuel<=0&&!fuelOut){fuelOut=true;logEv('out of fuel');}
+  if(rcs<=0&&!rcsOut){rcsOut=true;logEv('damper empty, refilling');}
+  if(rcs>=rcsMax&&rcsOut){rcsOut=false;logEv('damper full');}
+  if(telAcc>=0.25){telAcc=0;telemetry();}
+}
+const logEl=document.getElementById('log'),logText=document.getElementById('logtext'),logCopy=document.getElementById('logcopy');
+function toggleLog(){
+  logOpen=!logOpen;logEl.classList.toggle('hidden',!logOpen);
+  if(logOpen){logPaused=state==='flying'&&!paused;if(logPaused)paused=true;
+    logText.value=LOG.join('\n')||'No flights logged yet.';logText.scrollTop=logText.scrollHeight;logCopy.textContent='Copy';}
+  else if(logPaused){paused=false;logPaused=false;}
+}
+logCopy.addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText(logText.value);logCopy.textContent='Copied';}
+  catch(e){logText.focus();logText.select();try{document.execCommand('copy');logCopy.textContent='Copied';}catch(_){logCopy.textContent='Select all and copy';}}
+});
+document.getElementById('logclose').addEventListener('click',toggleLog);
+
+// ---- messages ----
+const card=$('card'),msg=$('msg');
+const CONTROLS=`<div class="keys desk-only">
+<b>← →</b><span>tilt lander</span><b>↑ / Space</b><span>thrust</span>
+<b>Shift + thrust</b><span>boost (burns fuel fast)</span>
+<b>S  (or X)</b><span>drift damper: cancel drift into/out of the screen (short bursts, refills from fuel)</span>
+<b>A D  (or Q E)</b><span>rotate the view</span><b>V</b><span>toggle 3D map (levels 1–7)</span><b>G</b><span>toggle depth ghosts</span>
+<b>R  /  P  /  M</b><span>restart, pause, mute</span><b>L</b><span>flight log</span></div>
+<p class="touch-only">Left buttons rotate the view and damp drift. Right buttons tilt and thrust; hold ⇧ with thrust to boost.</p>`;
+const go=t=>`<div class="go">${isTouch?'Tap':'Press Space'} ${t}</div>`;
+function levelBlurb(){
+  const n=level,out=[];
+  if(n===1)out.push('One gentle bend between you and the pad.');
+  else if(n===2)out.push('Now with a dead end. Not every valley goes somewhere.');
+  else if(n===3)out.push('Tunnels. The rock overhead is as solid as the ground, so watch the roof.');
+  else out.push('Longer route, tighter passages, less fuel.');
+  if(n===3)out.push('You also start facing the wrong way. Look around.');
+  if(LV.bend&&!levelBlurb.bendShown){out.push('One of these tunnels bends, so you’ll have to turn inside it.');levelBlurb.bendShown=true;}
+  if(n===5)out.push('Some dead ends are tunnels now too.');
+  if(n===4)out.push('From here the 3D map fades out as you near the pad. Fly the final approach on the slice.');
+  if(n===6)out.push('The 3D map now covers a smaller area. Keep track of the route yourself.');
+  if(n===7)out.push('The map’s range shrinks again. This is its last level.');
+  if(n===MAP_LAST+1)out.push('The 3D map is offline from here on. The slice and the compass are all you get.');
+  return out.map(t=>`<p>${t}</p>`).join('');
+}
+function showMsg(kind){
+  let h='';
+  if(kind==='intro')h=`<h1>LUNAR LANDER 3D</h1>
+<p>The moon is three-dimensional. Your screen is a single vertical slice through it, centred on your lander. Rotate the view to find the way to the amber pad; the compass needle always points to it.</p>
+<p>Only what’s on screen can hit you, but rotating can swing rock into you.</p>
+${CONTROLS}<p>Land with under ${T.SAFE_VZ} m/s down, under ${T.SAFE_H} m/s sideways (including drift), and nearly upright.</p>
+${levelBlurb()}${go('to launch')}`;
+  else if(kind==='level')h=`<h2>Level ${level}</h2>${levelBlurb()}${go('to launch')}`;
+  else if(kind==='landed')h=`<h2>The Eagle has landed</h2><p>+${lastPts} points, with ${Math.round(fuel)} fuel to spare.</p>${report()}${logBtn}${go('for level '+(level+1))}`;
+  else if(kind==='crashed')h=`<h2>Lander lost</h2><p>${lastReason}</p>${report()}${logBtn}${go('to try again')}`;
+  else if(kind==='pause')h=`<h2>Paused</h2>${CONTROLS}<div class="go">${isTouch?'Tap':'Press P'} to resume</div>`;
+  card.innerHTML=h;msg.classList.remove('hidden');
+}
+const logBtn='<p><button id="openlog" class="linkbtn">View flight log (L)</button></p>';
+function report(){if(!lastReport)return'';
+  return`<div class="rep">${lastReport.map(([k,v,lim,ok])=>`<span>${k}</span><b class="${ok?'ok':'bad'}">${v}</b><span>${lim}</span><b class="${ok?'ok':'bad'}">${ok?'✓':'✗'}</b>`).join('')}</div>`;}
+function hideMsg(){msg.classList.add('hidden');}
+
+// ---- loop ----
+const qs=new URLSearchParams(location.search);if(qs.get('level'))level=Math.max(1,+qs.get('level')|0);
+buildLevel(level);resetLander();showMsg('intro');
+const STEP=1/120;let last=performance.now(),acc=0;
+function frame(t){
+  const dt=Math.min(.05,(t-last)/1000);last=t;
+  if(!paused){acc+=dt;while(acc>=STEP){update(STEP);acc-=STEP;}}
+  if(AC&&thrG){const on=!muted&&!paused;
+    thrG.gain.setTargetAtTime(on&&thrusting?(boosting?.28:.16):0,AC.currentTime,.04);
+    rcsG.gain.setTargetAtTime(on&&(yawing||braking)?(braking?.06:.03):0,AC.currentTime,.05);}
+  render(paused?0:dt);hud();requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+
+</script>
+</body>
+</html>
