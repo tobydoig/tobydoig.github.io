@@ -9,7 +9,7 @@ token usage, only it shows your weekly usage rather than (what I think is more i
 
 Anyway, this little plugin shows your session token usage, weekly token usage and your context window usage.
 
-[Claude usage band screenshot](/assets/img/claude-usage-band.png)
+[Claude usage band screenshot](/assets/img/claude-usage-band.PNG)
 
 Session usage = the %age of tokens you've used in this session. When it hits 100% you have to wait for it to reset (up to around 3 or 5 hours)
 Weekly usage = the %age of tokens you've used this week. When it hits 100% you have to wait for it to reset (for me that's Friday afternoon, just after lunch)
