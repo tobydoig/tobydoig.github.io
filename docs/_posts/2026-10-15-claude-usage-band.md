@@ -5,6 +5,8 @@ title: "Claude usage band"
 When using Claude Desktop (aka Claude Code) the little circle used to tell you how long until a compaction will happen. At some point this changed to your
 token usage, only it shows your weekly usage rather than (what I think is more important) your session usage.
 
+![Free on Github](https://github.com/tobydoig/claude-usage-band)
+
 Anyway, this little plugin shows your session token usage, weekly token usage and your context window usage.
 
 ![Claude usage band screenshot](/assets/img/claude-usage-band.png)
